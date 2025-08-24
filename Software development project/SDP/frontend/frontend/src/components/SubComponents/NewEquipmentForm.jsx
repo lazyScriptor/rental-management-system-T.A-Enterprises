@@ -51,12 +51,19 @@ export function NewEquipmentForm(props) {
     eq_name: yup.string().required("Machine Name is required"),
     eq_dofpurchase: yup
       .date()
-      .required("Date of purchase is required")
-      .nullable(),
+      .nullable()
+      .transform((value, originalValue) =>
+        originalValue === "" ? null : value
+      )
+      .notRequired(),
+
     eq_warranty_expire: yup
       .date()
-      .required("Warranty expiration date is required")
-      .nullable(),
+      .nullable()
+      .transform((value, originalValue) =>
+        originalValue === "" ? null : value
+      )
+      .notRequired(),
     eq_cost: yup
       .number()
       .typeError("Machine cost must be a number")
@@ -67,7 +74,7 @@ export function NewEquipmentForm(props) {
       .typeError("Rental must be a number")
       .required("Rental is required")
       .positive("Rental must be positive"),
-    eq_description: yup.string().required("Description is required"),
+    eq_description: yup.string(),
     eq_defected_status: yup.number().required("Defective status is required"),
     eq_completestock: yup
       .number()
@@ -309,9 +316,9 @@ export function NewEquipmentForm(props) {
                   {...register("eq_catid")}
                   value={getValues("eq_catid") ?? ""}
                 >
-                  <MenuItem value={1}>Power tools</MenuItem>
-                  <MenuItem value={2}>Construction tools</MenuItem>
-                  <MenuItem value={3}>Other</MenuItem>
+                 <MenuItem value={1}>1 Day machine</MenuItem>
+                    <MenuItem value={2}>5 Day machine</MenuItem>
+                    <MenuItem value={3}>4 Day machine</MenuItem>
                 </Select>
                 <Typography variant="body2" color="error">
                   {errors.eq_catid?.message}
@@ -361,7 +368,13 @@ export function NewEquipmentForm(props) {
                 </Typography>
               </FormControl> */}
             </Grid>
-            <Grid item xs={12} sm={6} sx={{display:"flex",ml:-14.5}} gap={2}>
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              sx={{ display: "flex", ml: -14.5 }}
+              gap={2}
+            >
               <Button
                 variant="contained"
                 type="submit"

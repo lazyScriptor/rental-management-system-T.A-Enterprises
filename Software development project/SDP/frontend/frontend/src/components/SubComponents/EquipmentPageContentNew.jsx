@@ -348,12 +348,19 @@ export function CustomerPageMiddle() {
     eq_catid: yup.number().required("Category is required"),
     eq_dofpurchase: yup
       .date()
-      .required("Date of purchase is required")
-      .nullable(),
+      .nullable()
+      .transform((value, originalValue) =>
+        originalValue === "" ? null : value
+      )
+      .notRequired(),
+
     eq_warranty_expire: yup
       .date()
-      .required("Warranty expiration date is required")
-      .nullable(),
+      .nullable()
+      .transform((value, originalValue) =>
+        originalValue === "" ? null : value
+      )
+      .notRequired(),
     eq_cost: yup
       .number()
       .typeError("Machine cost must be a number")
@@ -364,7 +371,7 @@ export function CustomerPageMiddle() {
       .typeError("Rental must be a number")
       .required("Rental is required")
       .positive("Rental must be positive"),
-    eq_description: yup.string().required("Description is required"),
+    eq_description: yup.string(),
     eq_completestock: yup
       .number()
       .typeError("Complete stock must be a number")
@@ -539,9 +546,9 @@ export function CustomerPageMiddle() {
                     value={selectValue}
                     onChange={(e) => setSelectValue(e.target.value)}
                   >
-                    <MenuItem value={1}>Power tools</MenuItem>
-                    <MenuItem value={2}>Construction equipment</MenuItem>
-                    <MenuItem value={3}>Category 3</MenuItem>
+                    <MenuItem value={1}>1 Day machine</MenuItem>
+                    <MenuItem value={2}>5 Day machine</MenuItem>
+                    <MenuItem value={3}>4 Day machine</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>

@@ -160,7 +160,7 @@ export async function addEquipment(bodydata) {
   } = bodydata;
 
   const dateFormat = (value) => {
-    const dateOnly = value.substring(0, 10);
+    const dateOnly = value?.substring(0, 10);
     return dateOnly;
   };
   const neweq_dofpurchase = dateFormat(eq_dofpurchase);
@@ -204,7 +204,7 @@ export async function setEquipment(bodydata) {
   } = bodydata;
 
   const dateFormat = (value) => {
-    const dateOnly = value.substring(0, 10);
+    const dateOnly = value?.substring(0, 10);
     return dateOnly;
   };
   const neweq_dofpurchase = dateFormat(eq_dofpurchase);
