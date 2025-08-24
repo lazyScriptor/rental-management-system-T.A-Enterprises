@@ -503,11 +503,13 @@ function Invoice() {
                   }}
                 >
                   <TextField
+
                     onChange={(e) => {
                       setPhoneNumberorNic(e.target.value);
                       setValidationMessage("");
                     }}
                     value={phoneNumberorNic}
+                    disabled={updateBtnStatus}
                     sx={[{ width: "350px" }, textFieldStyle]}
                     id="outlined-basic"
                     label="Search with phone number or NIC"

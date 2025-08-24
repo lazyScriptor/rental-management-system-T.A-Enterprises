@@ -279,7 +279,7 @@ function InvoiceDetailsWindowDown(props) {
             /* Read more about isConfirmed, isDenied below */
             if (result.isConfirmed) {
               Swal.fire("Saved!", "", "success");
-              invoiceObject.invoiceCompletedDate = new Date()
+              invoiceObject.invoiceCompletedDate = new Date();
               handleInvoiceUpdate();
               setButtonDisable(true);
             } else if (result.isDenied) {
@@ -287,7 +287,7 @@ function InvoiceDetailsWindowDown(props) {
             }
           });
         } else {
-          invoiceObject.invoiceCompletedDate = new Date()
+          invoiceObject.invoiceCompletedDate = new Date();
           handleInvoiceUpdate();
           setButtonDisable(true);
         }
@@ -325,7 +325,14 @@ function InvoiceDetailsWindowDown(props) {
                 label="Discount"
                 variant="outlined"
               />
-              <Typography>Payment amount : {discount} LKR</Typography>
+              <Typography
+                sx={{
+                  color: discount ? "red" : "green",
+                  fontWeight: "bold",
+                }}
+              >
+                Payment amount : {discount} LKR
+              </Typography>
             </Box>
           )}
         </Box>
@@ -349,56 +356,91 @@ function InvoiceDetailsWindowDown(props) {
           <Box sx={{ display: "flex", width: "100%" }}>
             <Box
               sx={{
-                width: "30%",
+                width: "100%",
                 display: "flex",
                 flexDirection: "column",
-                gap: 3,
-                height: "100%",
+                gap: 2,
               }}
             >
-              <Typography variant="h6">Machine Cost </Typography>
-              <Typography variant="h7">Advance</Typography>
-              <Typography variant="h7">Payments</Typography>
-              <Typography variant="h6">Total payments</Typography>
-            </Box>
-            <Box sx={{ flexGrow: 1, height: "50%" }} />
-            <Box
-              sx={{
-                width: "30%",
-                display: "flex",
-                flexDirection: "column",
-                height: "100%",
-              }}
-            >
-              {invoiceSearchBtnStatus && (
-                <Typography variant="h6" sx={{ textAlign: "end", mb: 2.5 }}>
-                  {[machineTotalCost, " LKR"]}
+              {/* Machine Cost row */}
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography
+                  variant="h6"
+                  sx={{ color: "green", fontWeight: "bold" }}
+                >
+                  Machine Cost
                 </Typography>
-              )}
-              <Typography variant="h7" sx={{ textAlign: "end", mb: 2.5 }}>
-                {!!invoiceObject.advance ? invoiceObject.advance : ""}
-                {!!invoiceObject.advance ? " LKR" : ""}
-              </Typography>
+                {invoiceSearchBtnStatus && (
+                  <Typography
+                    variant="h6"
+                    sx={{ color: "green", fontWeight: "bold" }}
+                  >
+                    {machineTotalCost} LKR
+                  </Typography>
+                )}
+              </Box>
 
+              {/* Advance row */}
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography
+                  variant="h6"
+                  sx={{ color: "#ff9999", fontWeight: "bold" }}
+                >
+                  Advance
+                </Typography>
+                <Typography
+                  variant="body1"
+                  sx={{ color: "#ff9999", fontWeight: "bold" }}
+                >
+                  {!!invoiceObject.advance
+                    ? `${invoiceObject.advance} LKR`
+                    : ""}
+                </Typography>
+              </Box>
+
+              {/* Payments row(s) */}
               {invoiceObject.payments &&
                 invoiceObject.payments.map((item, index) => (
-                  <Typography
+                  <Box
                     key={index}
-                    variant="h7"
-                    sx={{ textAlign: "end" }}
+                    sx={{ display: "flex", justifyContent: "space-between" }}
                   >
-                    {`${index + 1}) `}
-                    {item.invpay_amount && item.invpay_amount}
-                    {item.invpay_amount && " LKR"}
-                  </Typography>
+                    <Typography
+                      variant="h6"
+                      sx={{ color: "#ff9999", fontWeight: "bold" }}
+                    >
+                      {`Payment ${index + 1}`}
+                    </Typography>
+                    <Typography
+                      variant="body1"
+                      sx={{ color: "#ff9999", fontWeight: "bold" }}
+                    >
+                      {item.invpay_amount ? `${item.invpay_amount} LKR` : ""}
+                    </Typography>
+                  </Box>
                 ))}
-              <br />
-              {invoiceObject.advance | invoiceObject.payments && (
-                <Typography align="right" variant="h6">
-                  <span style={{ textDecoration: "underline" }}>
-                    ( {[calculateTotalPayments(), " LKR"]} ){" "}
-                  </span>
-                </Typography>
+
+              {/* Total row */}
+              {(invoiceObject.advance ||
+                invoiceObject.payments?.length > 0) && (
+                <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                  <Typography
+                    variant="h6"
+                    sx={{ color: "red", fontWeight: "bold" }}
+                  >
+                    Total Payments
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      textDecoration: "underline",
+                      color: "red",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    {calculateTotalPayments()} LKR
+                  </Typography>
+                </Box>
               )}
             </Box>
           </Box>
