@@ -2,9 +2,17 @@ import React, { useContext, useState, useEffect } from "react";
 import "../Stylings/rootstyles.css";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
-import { Box, Button, Paper, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Fab,
+  FormLabel,
+  Paper,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch } from "@fortawesome/free-solid-svg-icons";
+import { faSearch, faUpload } from "@fortawesome/free-solid-svg-icons";
 import {
   AuthContext,
   InvoiceContext,
@@ -23,11 +31,17 @@ import InvoiceRightSideNew from "./Invoice/InvoiceRightSideNew.jsx";
 import InvoiceHandOverForm from "./Invoice/InvoiceHandOverForm.jsx";
 import FeedbackComponent from "../SubComponents/FeedbackComponent.jsx";
 import CompleteInvoiceTable from "./Invoice/CompleteInvoiceTable.jsx";
+import InvoicePdf from "./Invoice/InvoicePdf.jsx";
 import { useTheme } from "@emotion/react";
+import { faAddressCard } from "@fortawesome/free-regular-svg-icons";
 import YoutubeSearchedForIcon from "@mui/icons-material/YoutubeSearchedFor";
 import BackspaceOutlinedIcon from "@mui/icons-material/BackspaceOutlined";
 import Swal from "sweetalert2";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
+import AddIcCallOutlinedIcon from "@mui/icons-material/AddIcCallOutlined";
+import ContactMailOutlinedIcon from "@mui/icons-material/ContactMailOutlined";
+import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import { InvoicePdfWarehouseHandler } from "../RoleBasedAccess/Warehouse handler/Invoice/InvoiceWarehouseHandler.jsx";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
@@ -44,18 +58,31 @@ const textFieldStyle = {
 function Invoice() {
   const theme = useTheme();
   const {
+    fullDetailsEquipmentArray,
+    setFullDetailsEquipmentArray,
+    checkState,
+    setCheckState,
+    setPaymentArray,
+    eqObject,
+    setEqObject,
     invoiceSearchBtnStatus,
     setInvoiceSearchBtnStatus,
     invoiceObject,
     setInvoiceObject,
     clearObject,
     updateValue,
+    clearValues,
     buttonDesable,
+    setButtonDisable,
+    updateEqObject,
   } = useContext(InvoiceContext);
   const { showAlert } = useContext(SwalContext);
 
   const navigate = useNavigate();
   const { setIsAuthenticated } = useContext(AuthContext);
+
+  // PopupContext handlers for payments dialog
+  const { boolvalue, setBoolvalue, userData, setUserData } = useContext(PopupContext);
 
   const [phoneNumberorNic, setPhoneNumberorNic] = useState("");
   const [invoiceId, setInvoiceId] = useState("0000");
@@ -66,6 +93,7 @@ function Invoice() {
   const [invoiceIdSearch, setInvoiceIdSearch] = useState("");
   const [validationMessage, setValidationMessage] = useState("");
   const [updateBtnStatus, setUpdateBtnStatus] = useState(false);
+
   const [data, setData] = useState({
     cus_fname: "",
     cus_address1: "",
@@ -74,6 +102,7 @@ function Invoice() {
     cus_phone_number: "",
     cus_id: "",
   });
+
   const [clearData, setClearData] = useState({
     cus_fname: "",
     cus_address1: "",
@@ -82,14 +111,15 @@ function Invoice() {
     cus_phone_number: "",
     Cus: "",
   });
+
+  // Additions for customer invoice count and incomplete invoice IDs
+  const [numberOfInvoices, setNumberOfInvoices] = useState(0);
   const [incompleteInvoiceIds, setIncompleteInvoiceIds] = useState([]);
 
   useEffect(() => {}, [invoiceObject]);
-
   useEffect(() => {
     handleCreateNew();
   }, []);
-
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentDateTime(new Date());
@@ -120,6 +150,8 @@ function Invoice() {
   const handleSearchPhoneNumberorNic = async () => {
     if (!phoneNumberorNic) {
       setValidationMessage("Phone number, NIC, or customer ID is required");
+      setNumberOfInvoices(0);
+      setIncompleteInvoiceIds([]);
       return;
     }
 
@@ -131,25 +163,34 @@ function Invoice() {
       !isValidId(trimmedValue)
     ) {
       setValidationMessage("Invalid phone number, NIC, or ID format");
+      setNumberOfInvoices(0);
+      setIncompleteInvoiceIds([]);
       return;
     }
 
     setValidationMessage("");
 
     try {
-      const res = await axios.get(
-        `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
-      );
-      const respData = res.data;
+      let res;
+      if (isValidId(trimmedValue)) {
+        res = await axios.get(
+          `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
+        );
+      } else {
+        res = await axios.get(
+          `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
+        );
+      }
 
-      if (Array.isArray(respData) && respData.length > 0) {
-        const customer = respData[0];
-        setData(customer);
-        updateValue("customerDetails", customer);
+      const data = res.data;
+
+      if (Array.isArray(data) && data.length > 0) {
+        setData(data[0]);
+        updateValue("customerDetails", data[0]);
 
         // Fetch number_of_invoices
         try {
-          const id = customer.cus_id;
+          const id = data[0].cus_id;
           const cusInvoiceCount = await axios.get(
             `http://localhost:8085/reports/getCustomerRatings/${id}`
           );
@@ -159,14 +200,14 @@ function Invoice() {
             cusInvoiceCount.data.response.length > 0
               ? cusInvoiceCount.data.response[0].number_of_invoices
               : 0;
-          updateValue("number_of_invoices", count ?? 0);
+          setNumberOfInvoices(count ?? 0);
         } catch (err) {
-          updateValue("number_of_invoices", 0);
+          setNumberOfInvoices(0);
         }
 
         // Fetch incomplete invoice IDs
         try {
-          const id = customer.cus_id;
+          const id = data[0].cus_id;
           const resIncomplete = await axios.get(
             `http://localhost:8085/customer/incompleteInvoices/${id}`
           );
@@ -174,7 +215,7 @@ function Invoice() {
         } catch (err) {
           setIncompleteInvoiceIds([]);
         }
-      } else if (respData?.message) {
+      } else if (data.message) {
         setValidationMessage(
           "No customer found with this ID, phone number, or NIC"
         );
@@ -187,9 +228,10 @@ function Invoice() {
           cus_id: "",
         });
         updateValue("customerDetails", clearData);
-        updateValue("number_of_invoices", 0);
+        setNumberOfInvoices(0);
         setIncompleteInvoiceIds([]);
       } else {
+        console.error("Unexpected response format:", data);
         setValidationMessage("Unexpected error occurred");
         setData({
           cus_fname: "",
@@ -200,7 +242,7 @@ function Invoice() {
           cus_id: "",
         });
         updateValue("customerDetails", clearData);
-        updateValue("number_of_invoices", 0);
+        setNumberOfInvoices(0);
         setIncompleteInvoiceIds([]);
       }
     } catch (error) {
@@ -214,8 +256,9 @@ function Invoice() {
         cus_id: "",
       });
       updateValue("customerDetails", clearData);
-      updateValue("number_of_invoices", 0);
+      setNumberOfInvoices(0);
       setIncompleteInvoiceIds([]);
+      console.error("Error in handleSearchPhoneNumberorNic:", error);
     }
   };
 
@@ -223,24 +266,31 @@ function Invoice() {
     localStorage.removeItem("CIObject");
     setInvoiceSearchBtnStatus(false);
     setData(clearData);
+    setEqObject("");
     clearObject();
+    setPaymentArray([]);
     setUpdateBtnStatus(false);
-    updateValue("number_of_invoices", 0);
+    setNumberOfInvoices(0);
     setIncompleteInvoiceIds([]);
     try {
-      const res = await axios.get("http://localhost:8085/invoiceIdRetrieve");
-      setInvoiceId(res.data);
-      updateValue("InvoiceID", res.data);
-      updateValue("createdDate", currentDate);
-    } catch (error) {}
+      await axios.get("http://localhost:8085/invoiceIdRetrieve").then((res) => {
+        setInvoiceId(res.data);
+        updateValue("InvoiceID", res.data);
+        updateValue("createdDate", currentDate);
+      });
+    } catch (error) {
+      console.log("handleSearch Createinvoice error", error);
+    }
   };
 
   const handleInvoiceSearch = async (invoiceIdSearch) => {
     clearObject();
+
     try {
       const response = await axios.get(
         `http://localhost:8085/invoiceDataRetrieve/${invoiceIdSearch}`
       );
+
       if (response.status === 200) {
         setInvoiceSearchBtnStatus(true);
         updateValue("advance", response.data.advance);
@@ -259,11 +309,48 @@ function Invoice() {
           response.data.inv_completed_datetime
         );
         setUpdateBtnStatus(true);
+      } else if (response.status == 404) {
+        console.log("Invoice not found");
+      } else {
+        console.log("Unexpected response status:", response.status);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.log("Error:", error);
+    }
   };
 
-  const invoiceCount = Number(invoiceObject?.number_of_invoices) || 0;
+  const handleAdvanceSearch = () => {
+    Swal.fire({
+      title: "Redirect to the customer page?",
+      text: "Your current work will be lost!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, Proceed!",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        navigate("/customers");
+      }
+    });
+  };
+
+  const handleDownload = () => {
+    const capture = document.querySelector(`.complete-invoice`);
+    html2canvas(capture).then((canvas) => {
+      const imgData = canvas.toDataURL("image/png");
+      const doc = new jsPDF("p", "mm", "a4");
+      const componentWidth = doc.internal.pageSize.getWidth();
+      const componentHeight = (canvas.height * componentWidth) / canvas.width;
+      doc.addImage(imgData, "PNG", 0, 0, componentWidth, componentHeight);
+      doc.save("recipt.pdf");
+    });
+  };
+
+  // Payment button handler
+  const handleProceedPayment = () => {
+    setBoolvalue(true);
+  };
 
   return (
     <>
@@ -298,9 +385,7 @@ function Invoice() {
               <>
                 <Typography> Completed Date and Time </Typography>
                 <Typography>
-                  {new Date(
-                    invoiceObject.inv_completed_datetime
-                  ).toLocaleString()}
+                  {new Date(invoiceObject.inv_completed_datetime).toLocaleString()}
                 </Typography>
               </>
             ) : (
@@ -322,7 +407,7 @@ function Invoice() {
               onChange={(e) => setInvoiceIdSearch(e.target.value)}
               sx={[{ width: "350px" }, textFieldStyle]}
               id="outlined-basic"
-              label="Search with Invoice ID"
+              label="Search with invoice Id"
               variant="outlined"
             />
             <Button onClick={() => handleInvoiceSearch(invoiceIdSearch)}>
@@ -352,7 +437,13 @@ function Invoice() {
           </Box>
         </Box>
 
-        <Box sx={{ display: "flex", width: "100%", height: "55vh" }}>
+        <Box
+          sx={{
+            display: "flex",
+            width: "100%",
+            height: "55vh",
+          }}
+        >
           <Box
             sx={{
               display: "flex",
@@ -361,13 +452,12 @@ function Invoice() {
               width: "23.6%",
             }}
           >
-            {updateBtnStatus ? (
+            {updateBtnStatus == true ? (
               <InvoiceHandOverForm />
             ) : (
               <InvoiceRightSideNew />
             )}
           </Box>
-
           <Box
             sx={{
               display: "flex",
@@ -389,6 +479,21 @@ function Invoice() {
                 borderRadius: 3,
               }}
             >
+              <Box
+                width={"100px"}
+                height={"100px"}
+                position={"inherit"}
+                sx={{ mt: -1, ml: -22 }}
+              >
+                <FontAwesomeIcon
+                  icon={faAddressCard}
+                  size="2xl"
+                  style={{
+                    fontSize: "3rem",
+                    color: theme.palette.primary[100],
+                  }}
+                />
+              </Box>
               <Box
                 sx={{
                   display: "flex",
@@ -419,15 +524,10 @@ function Invoice() {
                     disabled={updateBtnStatus}
                     sx={[{ width: "350px" }, textFieldStyle]}
                     id="outlined-basic"
-                    label="Search with Phone / NIC / ID"
+                    label="Search with phone number or NIC"
                     variant="outlined"
                     error={!!validationMessage}
                     helperText={validationMessage}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleSearchPhoneNumberorNic();
-                      }
-                    }}
                   />
                   <Button
                     sx={{ height: "35px" }}
@@ -441,7 +541,7 @@ function Invoice() {
                       setPhoneNumberorNic("");
                       setValidationMessage("");
                       updateValue("customerDetails", clearData);
-                      updateValue("number_of_invoices", 0);
+                      setNumberOfInvoices(0);
                       setIncompleteInvoiceIds([]);
                     }}
                     sx={{
@@ -457,14 +557,14 @@ function Invoice() {
                       textFieldStyle,
                       {
                         "& input": {
-                          color: invoiceCount > 5 ? "#006400" : "#000000",
+                          color: numberOfInvoices > 5 ? "#006400" : "#000000",
                         },
                         width: 120,
                       },
                     ]}
                     value={
-                      invoiceObject.number_of_invoices !== undefined
-                        ? `No: ${invoiceCount}`
+                      numberOfInvoices !== undefined
+                        ? `No: ${numberOfInvoices}`
                         : ""
                     }
                   />
@@ -477,21 +577,7 @@ function Invoice() {
                       p: 0,
                     }}
                     size="small"
-                    onClick={() => {
-                      Swal.fire({
-                        title: "Redirect to the customer page?",
-                        text: "Your current work will be lost!",
-                        icon: "warning",
-                        showCancelButton: true,
-                        confirmButtonColor: "#d33",
-                        cancelButtonColor: "#3085d6",
-                        confirmButtonText: "Yes, Proceed!",
-                      }).then((result) => {
-                        if (result.isConfirmed) {
-                          navigate("/customers");
-                        }
-                      });
-                    }}
+                    onClick={handleAdvanceSearch}
                   >
                     <Typography variant="caption">
                       <PersonSearchIcon />
@@ -577,9 +663,7 @@ function Invoice() {
                     disabled={buttonDesable}
                     customvariant="custom"
                     variant="contained"
-                    onClick={() => {
-                      // Payment logic here
-                    }}
+                    onClick={handleProceedPayment}
                   >
                     Payments
                   </Button>
@@ -646,9 +730,15 @@ function Invoice() {
           </Box>
         </Box>
       </Box>
+      {/* <InvoicePdfWarehouseHandler/> */}
       <OverlayDialogBox>
         <Payments handleInvoiceSearch={handleInvoiceSearch} />
       </OverlayDialogBox>
+      {/* {isInvoiceUpdateFormShow && (
+        <InvoiceUpdateForm
+          setIsInvoiceUpdateFormShow={setIsInvoiceUpdateFormShow} isInvoiceUpdateFormShow={isInvoiceUpdateFormShow}
+        />
+      )} */}
     </>
   );
 }

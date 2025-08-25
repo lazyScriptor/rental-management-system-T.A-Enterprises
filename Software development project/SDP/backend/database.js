@@ -1174,23 +1174,28 @@ export async function getIncompleteRentals() {
   try {
     const [rows] = await pool.query(
       `SELECT 
-      equipment.eq_id,
-      equipment.eq_name,
-      invoice.inv_id,
-      invoice.inv_createddate,
-      DATEDIFF(CURRENT_DATE, invoice.inv_createddate) AS duration_in_days,
-      (CASE WHEN DATEDIFF(CURRENT_DATE, invoice.inv_createddate) IS NULL THEN 1 ELSE 0 END) AS not_completed
-    FROM 
-      equipment
-    JOIN 
-      invoiceEquipment ON equipment.eq_id = invoiceEquipment.inveq_eqid
-    JOIN 
-      invoice ON invoice.inv_id = invoiceEquipment.inveq_invid
-    WHERE 
-      invoiceEquipment.duration_in_days IS NULL
-    ORDER BY 
-      equipment.eq_name, invoice.inv_createddate;
-    `
+        equipment.eq_id,
+        equipment.eq_name,
+        equipment.eq_catid AS eq_category,
+        invoice.inv_id,
+        invoice.inv_createddate,
+        SUM(invoiceEquipment.inveq_borrowqty) AS total_quantity,
+        SUM(invoiceEquipment.inveq_returned_quantity) AS total_returned_quantity,
+        DATEDIFF(CURRENT_DATE, invoice.inv_createddate) AS duration_in_days,
+        1 AS not_completed
+      FROM 
+        equipment
+      JOIN 
+        invoiceEquipment ON equipment.eq_id = invoiceEquipment.inveq_eqid
+      JOIN 
+        invoice ON invoice.inv_id = invoiceEquipment.inveq_invid
+      WHERE 
+        invoice.inv_completed_datetime IS NULL
+        AND invoice.inv_delete_status = 0
+      GROUP BY 
+        equipment.eq_id, invoice.inv_id
+      ORDER BY 
+        equipment.eq_name, invoice.inv_createddate;`
     );
     return rows;
   } catch (error) {
