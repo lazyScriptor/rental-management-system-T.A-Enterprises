@@ -11,6 +11,9 @@ import {
   TableSortLabel,
   Chip,
   Box,
+  FormControlLabel,
+  Switch,
+  Typography,
 } from "@mui/material";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -26,6 +29,7 @@ export function EquipmentItem5() {
   const [endDate, setEndDate] = useState(null);
   const [machineId, setMachineId] = useState("");
   const [invoiceId, setInvoiceId] = useState("");
+  const [showZeroQty, setShowZeroQty] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,10 +76,12 @@ export function EquipmentItem5() {
           date.isSame(dayjs(endDate).endOf("day"))
         : true;
 
-      // Filter out rows where remaining quantity is 0
+      // Calculate remaining quantity
       const remainingQty =
         Number(row.total_quantity) - Number(row.total_returned_quantity);
-      const qtyMatch = remainingQty > 0;
+
+      // Show/hide zero quantity rows
+      const qtyMatch = showZeroQty ? true : remainingQty > 0;
 
       return (
         searchMatch &&
@@ -97,9 +103,9 @@ export function EquipmentItem5() {
 
   // Color decision for duration
   const getDurationColor = (days) => {
-    if (days >= 30) return "error";
-    if (days >= 7) return "warning";
-    return "success";
+    if (days >= 30) return "error"; // Red
+    if (days >= 7) return "warning"; // Yellow
+    return "success"; // Green
   };
 
   // Color for not completed
@@ -113,39 +119,68 @@ export function EquipmentItem5() {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 2 }}>
+        <Typography variant="h6" sx={{ mb: 1 }}>
+          Incomplete Equipment Rentals Report
+        </Typography>
         <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap" }}>
           <TextField
-            label="Search Equipment or Invoice"
+            label="Search by Equipment Name or Invoice ID"
             variant="outlined"
             size="small"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <TextField
-            label="Machine ID"
+            label="Filter by Machine ID"
             variant="outlined"
             size="small"
             value={machineId}
             onChange={(e) => setMachineId(e.target.value)}
           />
           <TextField
-            label="Invoice ID"
+            label="Filter by Invoice ID"
             variant="outlined"
             size="small"
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
           />
           <DatePicker
-            label="Start Date"
+            label="Filter by Start Date"
             value={startDate}
             onChange={(newValue) => setStartDate(newValue)}
             slotProps={{ textField: { size: "small" } }}
           />
           <DatePicker
-            label="End Date"
+            label="Filter by End Date"
             value={endDate}
             onChange={(newValue) => setEndDate(newValue)}
             slotProps={{ textField: { size: "small" } }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showZeroQty}
+                onChange={(e) => setShowZeroQty(e.target.checked)}
+                color="primary"
+              />
+            }
+            label="Show rows with 0 Remaining Quantity"
+          />
+        </Box>
+        <Box sx={{ mb: 2 }}>
+          <Chip
+            label="Green: Returned within 7 days"
+            color="success"
+            sx={{ mr: 1 }}
+          />
+          <Chip
+            label="Red: Overdue (30+ days)"
+            color="error"
+            sx={{ mr: 1 }}
+          />
+          <Chip
+            label="Yellow: Overdue (7-29 days)"
+            color="warning"
           />
         </Box>
         <TableContainer component={Paper}>
@@ -210,7 +245,7 @@ export function EquipmentItem5() {
                       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
                     }}
                   >
-                    Remaining Qty
+                    Remaining Quantity to Return
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>

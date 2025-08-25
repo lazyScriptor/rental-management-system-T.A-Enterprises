@@ -12,6 +12,8 @@ import {
   Button,
   Checkbox,
   FormControlLabel,
+  Typography,
+  Chip,
 } from "@mui/material";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { LocalizationProvider, DateTimePicker } from "@mui/x-date-pickers";
@@ -33,6 +35,8 @@ function InvoiceItem2() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [showIncomplete, setShowIncomplete] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [invoiceIdSearch, setInvoiceIdSearch] = useState("");
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -60,6 +64,12 @@ function InvoiceItem2() {
             (row) => !row.inv_completed_datetime
           );
         }
+        // Additional filtering by customer name and invoice id
+        filteredData = filteredData.filter(
+          (row) =>
+            row.customer_name.toLowerCase().includes(customerSearch.toLowerCase()) &&
+            String(row.invoice_id).includes(invoiceIdSearch)
+        );
         setData(filteredData);
       } else {
         console.log("Failed to retrieve data");
@@ -72,37 +82,69 @@ function InvoiceItem2() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line
-  }, [startDate, endDate, showIncomplete]);
+  }, [startDate, endDate, showIncomplete, customerSearch, invoiceIdSearch]);
 
   const handleClear = () => {
     setStartDate(null);
     setEndDate(null);
     setShowIncomplete(false);
+    setCustomerSearch("");
+    setInvoiceIdSearch("");
   };
 
   return (
     <Box>
+      <Typography variant="h6" sx={{ mb: 2 }}>
+        Invoice Reports
+      </Typography>
+      <Box sx={{ mb: 2 }}>
+        <Chip
+          label="Green: Completed Invoice"
+          color="success"
+          sx={{ mr: 1 }}
+        />
+        <Chip
+          label="Orange: Incomplete Invoice"
+          color="warning"
+          sx={{ mr: 1 }}
+        />
+      </Box>
       <Box
         display="flex"
         justifyContent="start"
         alignItems="center"
         mb={2}
         gap={2}
+        flexWrap="wrap"
       >
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <DateTimePicker
-            label="Start Date"
+            label="Filter by Start Date & Time"
             value={startDate}
             onChange={(newValue) => setStartDate(newValue)}
-            renderInput={(params) => <TextField {...params} />}
+            renderInput={(params) => <TextField {...params} size="small" />}
           />
           <DateTimePicker
-            label="End Date"
+            label="Filter by End Date & Time"
             value={endDate}
             onChange={(newValue) => setEndDate(newValue)}
-            renderInput={(params) => <TextField {...params} />}
+            renderInput={(params) => <TextField {...params} size="small" />}
           />
         </LocalizationProvider>
+        <TextField
+          label="Search by Customer Name"
+          variant="outlined"
+          size="small"
+          value={customerSearch}
+          onChange={(e) => setCustomerSearch(e.target.value)}
+        />
+        <TextField
+          label="Search by Invoice ID"
+          variant="outlined"
+          size="small"
+          value={invoiceIdSearch}
+          onChange={(e) => setInvoiceIdSearch(e.target.value)}
+        />
         <FormControlLabel
           control={
             <Checkbox
@@ -111,10 +153,10 @@ function InvoiceItem2() {
               color="warning"
             />
           }
-          label="Show Only Incomplete"
+          label="Show Only Incomplete Invoices"
         />
         <Button variant="contained" color="error" onClick={handleClear}>
-          Clear
+          Clear Filters
         </Button>
       </Box>
       <TableContainer component={Paper}>
@@ -124,9 +166,9 @@ function InvoiceItem2() {
               <TableCell align="center">Invoice ID</TableCell>
               <TableCell align="center">Customer Name</TableCell>
               <TableCell align="center">Created Date</TableCell>
-              <TableCell align="center">Total payments done (LKR)</TableCell>
+              <TableCell align="center">Total Payments Done (LKR)</TableCell>
               <TableCell align="center">Invoice Total Amount (LKR)</TableCell>
-              <TableCell align="center">Completed datetime</TableCell>
+              <TableCell align="center">Completed Date & Time</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
