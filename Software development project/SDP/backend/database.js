@@ -695,11 +695,11 @@ export async function getInvoiceDetails(invoiceIdSearch) {
 export async function updateInvoiceDetails(InvoiceCompleteDetail) {
   let createdDate;
   if (InvoiceCompleteDetail.invoiceCompletedDate) {
-     createdDate = dayjs(InvoiceCompleteDetail.invoiceCompletedDate)
+    createdDate = dayjs(InvoiceCompleteDetail.invoiceCompletedDate)
       .tz("Asia/Colombo")
       .format("YYYY-MM-DD HH:mm:ss");
     // Update invoice details
-  }else{
+  } else {
     createdDate = null;
   }
   try {
@@ -974,6 +974,34 @@ WHERE
 GROUP BY 
   customer.cus_id;
 `);
+    return response;
+  } catch (error) {
+    console.log("This is the backend reports customerRatings", error);
+  }
+}
+export async function reportsGetCustomerRatingsPerCustomer(id) {
+  try {
+    const [response] = await pool.query(
+      `SELECT 
+  customer.cus_fname,cus_lname,cus_phone_number,cus_delete_status,
+  AVG(invoice.inv_rating) AS average_rating,
+  COUNT(invoice.inv_id) AS number_of_invoices,
+  SUM(equipment.eq_rental * invoiceEquipment.duration_in_days) AS total_sales
+FROM 
+  customer
+JOIN 
+  invoice ON invoice.inv_cusid = customer.cus_id
+JOIN 
+  invoiceEquipment ON invoiceEquipment.inveq_invid = invoice.inv_id
+JOIN 
+  equipment ON equipment.eq_id = invoiceEquipment.inveq_eqid
+WHERE 
+ invoiceEquipment.duration_in_days IS NOT NULL AND customer.cus_id=?
+GROUP BY 
+  customer.cus_id;
+`,
+      [id]
+    );
     return response;
   } catch (error) {
     console.log("This is the backend reports customerRatings", error);

@@ -48,12 +48,13 @@ import timezone from "dayjs/plugin/timezone";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
-           
+
 const textFieldStyle = {
   "& .MuiOutlinedInput-root": {
     borderRadius: "12px",
   },
 };
+
 function Invoice() {
   const theme = useTheme();
   const {
@@ -79,6 +80,7 @@ function Invoice() {
 
   const navigate = useNavigate();
   const { setIsAuthenticated } = useContext(AuthContext);
+
   const [phoneNumberorNic, setPhoneNumberorNic] = useState("");
   const [invoiceId, setInvoiceId] = useState("0000");
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
@@ -90,19 +92,19 @@ function Invoice() {
   const [validationMessage, setValidationMessage] = useState("");
   const [updateBtnStatus, setUpdateBtnStatus] = useState(false);
 
-  
   useEffect(() => {}, [invoiceObject]);
-  //Create new invoice
+
+  // Create new invoice
   useEffect(() => {
     handleCreateNew();
   }, []);
-  //Clock
+
+  // Clock
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentDateTime(new Date());
     }, 1000);
-
-    return () => clearInterval(interval); // Cleanup interval on component unmount
+    return () => clearInterval(interval);
   }, []);
 
   const [data, setData] = useState({
@@ -123,90 +125,16 @@ function Invoice() {
     Cus: "",
   });
 
+  const { boolvalue, setBoolvalue, userData, setUserData } =
+    useContext(PopupContext);
+
   const handleProceedPayment = () => {
     setBoolvalue(true);
   };
 
-  const { boolvalue, setBoolvalue, userData, setUserData } =
-    useContext(PopupContext);
-
-  const handleSearchPhoneNumberorNic = async () => {
-    if (!phoneNumberorNic) {
-      setValidationMessage("Phone number, NIC, or customer ID is required");
-      return;
-    }
-
-    const trimmedValue = phoneNumberorNic.trim();
-
-    if (
-      !isValidNIC(trimmedValue) &&
-      !isValidPhoneNumber(trimmedValue) &&
-      !isValidId(trimmedValue)
-    ) {
-      setValidationMessage("Invalid phone number, NIC, or ID format");
-      return;
-    }
-
-    setValidationMessage("");
-
-    try {
-      let res;
-      if (isValidId(trimmedValue)) {
-        res = await axios.get(
-          `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
-        );
-      } else {
-        res = await axios.get(
-          `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
-        );
-      }
-
-      const data = res.data;
-
-      if (Array.isArray(data) && data.length > 0) {
-        setData(data[0]);
-        updateValue("customerDetails", data[0]);
-      } else if (data.message) {
-        setValidationMessage(
-          "No customer found with this ID, phone number, or NIC"
-        );
-        setData({
-          cus_fname: "",
-          cus_address1: "",
-          cus_address2: "",
-          nic: "",
-          cus_phone_number: "",
-          cus_id: "",
-        });
-        updateValue("customerDetails", clearData);
-      } else {
-        console.error("Unexpected response format:", data);
-        setValidationMessage("Unexpected error occurred");
-        setData({
-          cus_fname: "",
-          cus_address1: "",
-          cus_address2: "",
-          nic: "",
-          cus_phone_number: "",
-          cus_id: "",
-        });
-        updateValue("customerDetails", clearData);
-      }
-    } catch (error) {
-      setValidationMessage("Error occurred in front end");
-      setData({
-        cus_fname: "",
-        cus_address1: "",
-        cus_address2: "",
-        nic: "",
-        cus_phone_number: "",
-        cus_id: "",
-      });
-      updateValue("customerDetails", clearData);
-      console.error("Error in handleSearchPhoneNumberorNic:", error);
-    }
-  };
-
+  // -------------------------
+  // VALIDATIONS (unchanged)
+  // -------------------------
   const isValidId = (id) => {
     const validIdFormat = /^\d{1,4}$/;
     return validIdFormat.test(id) && parseInt(id) < 10000;
@@ -227,6 +155,109 @@ function Invoice() {
     );
   };
 
+  // ---------------------------------------
+  // SEARCH (hardened with safe fallbacks)
+  // ---------------------------------------
+  const handleSearchPhoneNumberorNic = async () => {
+    if (!phoneNumberorNic) {
+      setValidationMessage("Phone number, NIC, or customer ID is required");
+      return;
+    }
+
+    const trimmedValue = phoneNumberorNic.trim();
+
+    if (
+      !isValidNIC(trimmedValue) &&
+      !isValidPhoneNumber(trimmedValue) &&
+      !isValidId(trimmedValue)
+    ) {
+      setValidationMessage("Invalid phone number, NIC, or ID format");
+      return;
+    }
+
+    setValidationMessage("");
+
+    try {
+      // single endpoint used for all three cases (as in your code)
+      const res = await axios.get(
+        `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
+      );
+      const respData = res.data;
+
+      if (Array.isArray(respData) && respData.length > 0) {
+        const customer = respData[0];
+
+        // Update customer details
+        setData(customer);
+        updateValue("customerDetails", customer);
+
+        // Try to fetch the number_of_invoices safely
+        try {
+          const id = customer.cus_id;
+          const cusInvoiceCount = await axios.get(
+            `http://localhost:8085/reports/getCustomerRatings/${id}`
+          );
+
+          const count =
+            cusInvoiceCount?.data?.response &&
+            Array.isArray(cusInvoiceCount.data.response) &&
+            cusInvoiceCount.data.response.length > 0
+              ? cusInvoiceCount.data.response[0].number_of_invoices
+              : 0;
+
+          updateValue("number_of_invoices", count ?? 0);
+        } catch (err) {
+          console.error("Error fetching customer ratings:", err);
+          updateValue("number_of_invoices", 0);
+        }
+      } else if (respData?.message) {
+        // Not found
+        setValidationMessage(
+          "No customer found with this ID, phone number, or NIC"
+        );
+        setData({
+          cus_fname: "",
+          cus_address1: "",
+          cus_address2: "",
+          nic: "",
+          cus_phone_number: "",
+          cus_id: "",
+        });
+        updateValue("customerDetails", clearData);
+        updateValue("number_of_invoices", 0);
+      } else {
+        console.error("Unexpected response format:", respData);
+        setValidationMessage("Unexpected error occurred");
+        setData({
+          cus_fname: "",
+          cus_address1: "",
+          cus_address2: "",
+          nic: "",
+          cus_phone_number: "",
+          cus_id: "",
+        });
+        updateValue("customerDetails", clearData);
+        updateValue("number_of_invoices", 0);
+      }
+    } catch (error) {
+      setValidationMessage("Error occurred in front end");
+      setData({
+        cus_fname: "",
+        cus_address1: "",
+        cus_address2: "",
+        nic: "",
+        cus_phone_number: "",
+        cus_id: "",
+      });
+      updateValue("customerDetails", clearData);
+      updateValue("number_of_invoices", 0);
+      console.error("Error in handleSearchPhoneNumberorNic:", error);
+    }
+  };
+
+  // -------------------------
+  // CREATE NEW INVOICE
+  // -------------------------
   const handleCreateNew = async () => {
     localStorage.removeItem("CIObject");
     setInvoiceSearchBtnStatus(false);
@@ -235,51 +266,52 @@ function Invoice() {
     clearObject();
     setPaymentArray([]);
     setUpdateBtnStatus(false);
+    updateValue("number_of_invoices", 0); // reset count on new
+
     try {
-      await axios.get("http://localhost:8085/invoiceIdRetrieve").then((res) => {
-        console.log(res.data);
-        setInvoiceId(res.data);
-        updateValue("InvoiceID", res.data);
-        updateValue("createdDate", currentDate);
-      });
+      const res = await axios.get("http://localhost:8085/invoiceIdRetrieve");
+      setInvoiceId(res.data);
+      updateValue("InvoiceID", res.data);
+      updateValue("createdDate", currentDate);
     } catch (error) {
       console.log("handleSearch Createinvoice error", error);
     }
   };
 
+  // -------------------------
+  // INVOICE SEARCH
+  // -------------------------
   const handleInvoiceSearch = async (invoiceIdSearch) => {
     clearObject();
 
     try {
-      console.log(invoiceIdSearch);
       const response = await axios.get(
         `http://localhost:8085/invoiceDataRetrieve/${invoiceIdSearch}`
       );
 
       if (response.status === 200) {
         setInvoiceSearchBtnStatus(true);
-        console.log("Invoice details:", response.data);
         updateValue("advance", response.data.advance);
         updateValue("createdDate", response.data.createdDate);
+
         response.data.payments.forEach((payment) => {
-          // Pass each payment object to the updateValue function
           updateValue("payments", payment);
         });
-        console.log(response.data.customerDetails.length);
+
         updateValue("customerDetails", response.data.customerDetails);
+
         response.data.eqdetails.forEach((eqdetail) => {
-          // Pass each payment object to the updateValue function
           updateValue("eqdetails", eqdetail);
         });
+
         updateValue("InvoiceID", response.data.InvoiceID);
         updateValue("iDstatus", response.data.idStatus);
         updateValue(
           "inv_completed_datetime",
           response.data.inv_completed_datetime
         );
-        console.log("object", response.data.eqdetails);
         setUpdateBtnStatus(true);
-      } else if (response.status == 404) {
+      } else if (response.status === 404) {
         console.log("Invoice not found");
       } else {
         console.log("Unexpected response status:", response.status);
@@ -288,6 +320,7 @@ function Invoice() {
       console.log("Error:", error);
     }
   };
+
   const handleAdvanceSearch = () => {
     Swal.fire({
       title: "Redirect to the customer page?",
@@ -303,11 +336,7 @@ function Invoice() {
       }
     });
   };
-  const textFieldStyle = {
-    "& .MuiOutlinedInput-root": {
-      borderRadius: "12px",
-    },
-  };
+
   const handleDownload = () => {
     const capture = document.querySelector(`.complete-invoice`);
 
@@ -320,6 +349,9 @@ function Invoice() {
       doc.save("recipt.pdf");
     });
   };
+
+  // for number_of_invoices display color
+  const invoiceCount = Number(invoiceObject?.number_of_invoices) || 0;
 
   return (
     <>
@@ -350,10 +382,15 @@ function Invoice() {
               width: "23.6%",
             }}
           >
-            {invoiceObject.inv_completed_datetime ? (<>
-            <Typography> Completed Date and Time </Typography>
-              <Typography>{new Date(invoiceObject.inv_completed_datetime).toLocaleString()}</Typography>
-            </>
+            {invoiceObject.inv_completed_datetime ? (
+              <>
+                <Typography> Completed Date and Time </Typography>
+                <Typography>
+                  {new Date(
+                    invoiceObject.inv_completed_datetime
+                  ).toLocaleString()}
+                </Typography>
+              </>
             ) : (
               ""
             )}
@@ -373,7 +410,7 @@ function Invoice() {
               onChange={(e) => setInvoiceIdSearch(e.target.value)}
               sx={[{ width: "350px" }, textFieldStyle]}
               id="outlined-basic"
-              label="Search with invoice Id"
+              label="Search with Invoice ID"
               variant="outlined"
             />
             <Button onClick={() => handleInvoiceSearch(invoiceIdSearch)}>
@@ -403,13 +440,7 @@ function Invoice() {
           </Box>
         </Box>
 
-        <Box
-          sx={{
-            display: "flex",
-            width: "100%",
-            height: "55vh",
-          }}
-        >
+        <Box sx={{ display: "flex", width: "100%", height: "55vh" }}>
           <Box
             sx={{
               display: "flex",
@@ -418,12 +449,9 @@ function Invoice() {
               width: "23.6%",
             }}
           >
-            {updateBtnStatus == true ? (
-              <InvoiceHandOverForm />
-            ) : (
-              <InvoiceRightSideNew />
-            )}
+            {updateBtnStatus ? <InvoiceHandOverForm /> : <InvoiceRightSideNew />}
           </Box>
+
           <Box
             sx={{
               display: "flex",
@@ -460,27 +488,7 @@ function Invoice() {
                   }}
                 />
               </Box>
-              {/* <Box
-                sx={{
-                  display: "flex",
-                  width: "20%",
-                  flexDirection: "column",
-                  justifyContent: "space-evenly",
-                  alignItems: "end",
 
-                  mr: 2,
-                }}
-              >
-
-                <FormLabel sx={{ fontSize: "15px" }}>Customer Name</FormLabel>
-                <FormLabel sx={{ fontSize: "15px" }}>
-                  Customer Address
-                </FormLabel>
-                <FormLabel sx={{ fontSize: "15px" }}>Customer NIC </FormLabel>
-                <FormLabel sx={{ fontSize: "15px" }}>
-                  Customer Phone number
-                </FormLabel>
-              </Box> */}
               <Box
                 sx={{
                   display: "flex",
@@ -503,7 +511,6 @@ function Invoice() {
                   }}
                 >
                   <TextField
-
                     onChange={(e) => {
                       setPhoneNumberorNic(e.target.value);
                       setValidationMessage("");
@@ -512,10 +519,15 @@ function Invoice() {
                     disabled={updateBtnStatus}
                     sx={[{ width: "350px" }, textFieldStyle]}
                     id="outlined-basic"
-                    label="Search with phone number or NIC"
+                    label="Search with Phone / NIC / ID"
                     variant="outlined"
                     error={!!validationMessage}
                     helperText={validationMessage}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSearchPhoneNumberorNic();
+                      }
+                    }}
                   />
                   <Button
                     sx={{ height: "35px" }}
@@ -530,14 +542,37 @@ function Invoice() {
                       setPhoneNumberorNic("");
                       setValidationMessage("");
                       updateValue("customerDetails", clearData);
+                      updateValue("number_of_invoices", 0);
                     }}
                     sx={{
                       color: (theme) => theme.palette.primary.error[400],
                     }}
                   >
-                    <BackspaceOutlinedIcon />{" "}
+                    <BackspaceOutlinedIcon />
                   </Button>
                   <Box flexGrow={1} />
+
+                  <TextField
+                    disabled
+                    sx={[
+                      textFieldStyle,
+                      {
+                        "& input": {
+                          color:
+                            invoiceCount > 5
+                              ? "#006400" // dark green if frequent
+                              : "#000000", // black otherwise
+                        },
+                        width: 120,
+                      },
+                    ]}
+                    value={
+                      invoiceObject.number_of_invoices !== undefined
+                        ? `No: ${invoiceCount}`
+                        : ""
+                    }
+                  />
+
                   <Button
                     variant="outlined"
                     sx={{
@@ -601,6 +636,7 @@ function Invoice() {
                   />
                   <IdCardStatus />
                 </Box>
+
                 <Box>
                   <TextField
                     fullWidth
@@ -617,6 +653,7 @@ function Invoice() {
                     variant="outlined"
                   />
                 </Box>
+
                 <Box
                   sx={{
                     display: "flex",
@@ -633,11 +670,6 @@ function Invoice() {
                   >
                     Payments
                   </Button>
-
-                  {/* <Fab variant="extended" onClick={handleFeedback}>
-                    <NavigationIcon sx={{ mr: 1 }} />
-                    Feedback
-                  </Fab> */}
                   {invoiceSearchBtnStatus && <FeedbackComponent />}
                 </Box>
               </Box>
@@ -703,15 +735,11 @@ function Invoice() {
           </Box>
         </Box>
       </Box>
+
       {/* <InvoicePdfWarehouseHandler/> */}
       <OverlayDialogBox>
         <Payments handleInvoiceSearch={handleInvoiceSearch} />
       </OverlayDialogBox>
-      {/* {isInvoiceUpdateFormShow && (
-        <InvoiceUpdateForm
-          setIsInvoiceUpdateFormShow={setIsInvoiceUpdateFormShow} isInvoiceUpdateFormShow={isInvoiceUpdateFormShow}
-        />
-      )} */}
     </>
   );
 }

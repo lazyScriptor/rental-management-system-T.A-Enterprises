@@ -43,6 +43,7 @@ import {
   getDeletedInvoices,
   deleteEquipmentById,
   getCombinedInvoiceReports,
+  reportsGetCustomerRatingsPerCustomer,
 } from "./database.js";
 
 const app = express();
@@ -481,6 +482,20 @@ app.get(`/reports/getCustomerRatings`, async (req, res) => {
     const response = await reportsGetCustomerRatings();
     console.log(response);
     res.json({ status: true, message: "Value retrieved", response });
+  } catch (error) {
+    res.json({
+      status: false,
+      message: "failed to retrieve customer rating information",
+    });
+  }
+});
+app.get(`/reports/getCustomerRatings/:id`, async (req, res) => {
+  try {
+    const id=req.params.id;
+    console.log("id is pritin",id)
+    const response = await reportsGetCustomerRatingsPerCustomer(id);
+    console.log(response);
+    res.json({ status: true, message: "Value retrieved", response:response });
   } catch (error) {
     res.json({
       status: false,
