@@ -692,6 +692,7 @@ app.get('/reports/getCombinedInvoiceReports', async (req, res) => {
 
   try {
     const data = await getCombinedInvoiceReports(start_date, end_date);
+    console.log(data)
     res.json({ status: true, response: data });
   } catch (error) {
     res.status(500).json({ status: false, error: "Failed to retrieve combined invoice reports" });

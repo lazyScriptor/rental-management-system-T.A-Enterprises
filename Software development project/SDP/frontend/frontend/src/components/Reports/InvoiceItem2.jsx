@@ -10,17 +10,19 @@ import {
   TableHead,
   TableRow,
   Button,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { LocalizationProvider, DateTimePicker } from "@mui/x-date-pickers";
 import axios from "axios";
-import dayjs from "dayjs"; // Import dayjs library
-import isSameOrAfter from "dayjs/plugin/isSameOrAfter"; // Import the isSameOrAfter plugin
-import isSameOrBefore from "dayjs/plugin/isSameOrBefore"; // Import the isSameOrBefore plugin
+import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import TablePagination from "@mui/material/TablePagination";
 
-dayjs.extend(isSameOrAfter); // Extend dayjs with the isSameOrAfter plugin
-dayjs.extend(isSameOrBefore); // Extend dayjs with the isSameOrBefore plugin
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
 
 const rowsPerPageOptions = [5, 10, 25];
 
@@ -30,6 +32,7 @@ function InvoiceItem2() {
   const [endDate, setEndDate] = useState(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [showIncomplete, setShowIncomplete] = useState(false);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -46,12 +49,17 @@ function InvoiceItem2() {
         "http://localhost:8085/reports/getCombinedInvoiceReports"
       );
       if (response.data.status) {
-        const filteredData = response.data.response.filter(
+        let filteredData = response.data.response.filter(
           (row) =>
             row.customer_name &&
             (!startDate || dayjs(row.inv_createddate).isSameOrAfter(startDate)) &&
             (!endDate || dayjs(row.inv_createddate).isSameOrBefore(endDate))
         );
+        if (showIncomplete) {
+          filteredData = filteredData.filter(
+            (row) => !row.inv_completed_datetime
+          );
+        }
         setData(filteredData);
       } else {
         console.log("Failed to retrieve data");
@@ -63,15 +71,13 @@ function InvoiceItem2() {
 
   useEffect(() => {
     fetchData();
-  }, [startDate, endDate]);
-
-  const handleSearch = () => {
-    fetchData();
-  };
+    // eslint-disable-next-line
+  }, [startDate, endDate, showIncomplete]);
 
   const handleClear = () => {
     setStartDate(null);
     setEndDate(null);
+    setShowIncomplete(false);
   };
 
   return (
@@ -97,7 +103,16 @@ function InvoiceItem2() {
             renderInput={(params) => <TextField {...params} />}
           />
         </LocalizationProvider>
-       
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={showIncomplete}
+              onChange={(e) => setShowIncomplete(e.target.checked)}
+              color="warning"
+            />
+          }
+          label="Show Only Incomplete"
+        />
         <Button variant="contained" color="error" onClick={handleClear}>
           Clear
         </Button>
@@ -111,6 +126,7 @@ function InvoiceItem2() {
               <TableCell align="center">Created Date</TableCell>
               <TableCell align="center">Total payments done (LKR)</TableCell>
               <TableCell align="center">Invoice Total Amount (LKR)</TableCell>
+              <TableCell align="center">Completed datetime</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -118,7 +134,14 @@ function InvoiceItem2() {
               ? data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               : data
             ).map((row, index) => (
-              <TableRow key={index}>
+              <TableRow
+                key={index}
+                sx={{
+                  backgroundColor: !row.inv_completed_datetime
+                    ? "#FFF3E0" // light orange for incomplete
+                    : "#E8F5E9", // light green for completed
+                }}
+              >
                 <TableCell align="center">{row.invoice_id}</TableCell>
                 <TableCell align="center">{row.customer_name}</TableCell>
                 <TableCell align="center">
@@ -126,6 +149,11 @@ function InvoiceItem2() {
                 </TableCell>
                 <TableCell align="center">{row.total_revenue}</TableCell>
                 <TableCell align="center">{row.total_income}</TableCell>
+                <TableCell align="center">
+                  {row.inv_completed_datetime
+                    ? dayjs(row.inv_completed_datetime).format("YYYY-MM-DD HH:mm:ss")
+                    : "In Progress"}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -1221,25 +1221,25 @@ export async function getDeletedInvoices(startDate, endDate) {
 export async function getCombinedInvoiceReports(startDate, endDate) {
   try {
     const [revenue] = await pool.query(`
-   SELECT 
+  SELECT 
     i.inv_id AS invoice_id,
-        i.inv_createddate,
+    i.inv_createddate,
+    i.inv_completed_datetime,
     (SUM(IFNULL(p.invpay_amount, 0)) + i.inv_advance) AS total_revenue
-FROM 
+  FROM 
     invoice i
-LEFT JOIN 
+  LEFT JOIN 
     invoicePayments p ON p.invpay_inv_id = i.inv_id
-WHERE 
+  WHERE 
     i.inv_delete_status = 0
-GROUP BY 
+  GROUP BY 
     i.inv_id;
-
-    `);
+`);
     const [totalIncome] = await pool.query(`
       SELECT 
         i.inv_id AS invoice_id,
         CONCAT(c.cus_fname, ' ', c.cus_lname) AS customer_name,
-        SUM((ie.duration_in_days * ie.inveq_borrowqty * e.eq_rental)) AS total_income
+        SUM((ie.duration_in_days * ie.inveq_borrowqty * e.eq_rental)) AS total_income ,i.inv_completed_datetime
       FROM 
         invoice i
       JOIN 
@@ -1263,6 +1263,7 @@ GROUP BY
       return {
         invoice_id: revItem.invoice_id,
         inv_createddate: revItem.inv_createddate,
+        inv_completed_datetime: revItem.inv_completed_datetime,
         total_revenue: revItem.total_revenue,
         customer_name: matchingTotalIncome
           ? matchingTotalIncome.customer_name
