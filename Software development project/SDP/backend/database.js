@@ -1287,3 +1287,15 @@ export async function getCombinedInvoiceReports(startDate, endDate) {
     throw error;
   }
 }
+export async function getIncompleteInvoicesByCustomerId(customerId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT inv_id FROM invoice WHERE inv_cusid = ? AND inv_completed_datetime IS NULL AND inv_delete_status = 0`,
+      [customerId]
+    );
+    return rows.map(row => row.inv_id);
+  } catch (error) {
+    console.log("Error fetching incomplete invoices by customer:", error);
+    return [];
+  }
+}

@@ -44,6 +44,7 @@ import {
   deleteEquipmentById,
   getCombinedInvoiceReports,
   reportsGetCustomerRatingsPerCustomer,
+  getIncompleteInvoicesByCustomerId,
 } from "./database.js";
 
 const app = express();
@@ -702,4 +703,14 @@ dotenv.config();
 const port = process.env.PORT;
 app.listen(port, () => {
   console.log(`Listening to port ${port}`);
+});
+
+
+app.get("/customer/incompleteInvoices/:customerId", async (req, res) => {
+  try {
+    const invoiceIds = await getIncompleteInvoicesByCustomerId(req.params.customerId);
+    res.json({ status: true, invoiceIds });
+  } catch (error) {
+    res.json({ status: false, invoiceIds: [] });
+  }
 });
