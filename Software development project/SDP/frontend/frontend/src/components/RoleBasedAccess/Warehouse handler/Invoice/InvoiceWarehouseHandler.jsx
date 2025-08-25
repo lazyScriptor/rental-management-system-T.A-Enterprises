@@ -5,6 +5,7 @@ import jsPDF from "jspdf";
 import {
   Box,
   Button,
+  Divider,
   Paper,
   Stack,
   TextField,
@@ -414,110 +415,455 @@ function InvoiceDocumentTable() {
   );
 }
 
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+import { useRef } from "react";
+
+
+
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const INVOICE_MAX_WIDTH = 800; // single source of truth for card width
+
 export function InvoicePdfWarehouseHandler() {
-  const { invoiceObject } = useContext(InvoiceContext);
+  const { invoiceObject, totalPayments } = useContext(InvoiceContext);
+  const pdfRef = useRef(null);
 
   useEffect(() => {
-    console.log(invoiceObject);
+    // keep for debugging
+    // console.log(invoiceObject);
   }, [invoiceObject]);
+
+  // ---------- helpers ----------
+  const handleDurationinDays = (duration) => {
+    const d = Number(duration) || 0;
+    if (d > 0) return d;
+    const t = dayjs(new Date());
+    const c = dayjs(invoiceObject?.createdDate);
+    return t.diff(c, "day") + 1;
+  };
+
+  const rentalCalculation = (row) => {
+    const dateSet = Number(row.eqcat_dataset) || 0;
+    const normalRental = Number(row.eq_rental) || 0;
+    const specialRental = Number(row.spe_singleday_rent) || 0;
+    const duration = Number(row.duration_in_days) || 0;
+    const quantity = Number(row.inveq_borrowqty) || 0;
+    const categoryId = Number(row.eqcat_id) || 0;
+
+    let finalRental = 0;
+    // Special scaffolding (category 2)
+    if (specialRental && categoryId == 2) {
+      if (duration <= dateSet) {
+        if (duration !== 1) finalRental = specialRental * 2 * quantity;
+        if (duration === 1) finalRental = specialRental * 1 * quantity;
+      } else {
+        finalRental = normalRental * duration * quantity;
+      }
+    } else if (specialRental && categoryId != 2) {
+      if (duration < dateSet) finalRental = specialRental * duration * quantity;
+      else finalRental = normalRental * duration * quantity;
+    } else {
+      finalRental = normalRental * duration * quantity;
+    }
+    return finalRental;
+  };
+
+  // Rate/Day display that mirrors your table logic (with Sinhala note)
+  const displayRateJSX = (row, duration) => {
+    const dateSet = Number(row.eqcat_dataset) || 0;
+    const normalRental = Number(row.eq_rental) || 0;
+    const specialRental = Number(row.spe_singleday_rent) || 0;
+    const categoryId = Number(row.eqcat_id) || 0;
+
+    if (!duration) return normalRental;
+
+    if (specialRental && categoryId === 2) {
+      if (duration <= dateSet) {
+        if (duration !== 1) {
+          return (
+            <>
+              {specialRental * 2}
+              <span style={{ fontSize: "0.7rem" }}> : දින දෙකකට පමණි</span>
+            </>
+          );
+        }
+        return specialRental;
+      }
+      return normalRental;
+    } else if (specialRental && categoryId !== 2) {
+      if (duration < dateSet) return specialRental;
+      return normalRental;
+    }
+    return normalRental;
+  };
+
+  const handleDownload = (name, invoiceid) => {
+    const capture = pdfRef.current;
+    const options = {
+      scale: 2,
+      useCORS: true,
+      scrollY: -window.scrollY,
+      windowHeight: document.documentElement.scrollHeight,
+    };
+    html2canvas(capture, options).then((canvas) => {
+      const imgData = canvas.toDataURL("image/png");
+      const pdfWidth = canvas.width * 0.264583; // px to mm
+      const pdfHeight = canvas.height * 0.264583;
+      const doc = new jsPDF({ unit: "mm", format: [pdfWidth, pdfHeight] });
+      doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      doc.save(`${name}-${invoiceid}-invoice.pdf`);
+    });
+  };
+
+  // ---------- data splits ----------
+  const eqdetails = invoiceObject?.eqdetails ?? [];
+  const notHandedOverItems = eqdetails.filter((r) => !r.inveq_return_date);
+  const handedOverItems = eqdetails.filter((r) => !!r.inveq_return_date);
+
+  // ---------- totals ----------
+  const today = dayjs();
+  const createdDate = dayjs(invoiceObject?.createdDate);
+
+  const notHandedOverTotal = notHandedOverItems.reduce((acc, row) => {
+    const duration = today.diff(createdDate, "day") + 1; // include today
+    const dateSet = Number(row.eqcat_dataset) || 0;
+    const normalRental = Number(row.eq_rental) || 0;
+    const specialRental = Number(row.spe_singleday_rent) || 0;
+    const quantity = Number(row.inveq_borrowqty) || 0;
+    const categoryId = Number(row.eqcat_id) || 0;
+
+    let finalRental = 0;
+    if (specialRental && categoryId == 2) {
+      if (duration <= dateSet) {
+        if (duration !== 1) finalRental = specialRental * 2 * quantity;
+        if (duration === 1) finalRental = specialRental * 1 * quantity;
+      } else {
+        finalRental = normalRental * duration * quantity;
+      }
+    } else if (specialRental && categoryId != 2) {
+      if (duration < dateSet) finalRental = specialRental * duration * quantity;
+      else finalRental = normalRental * duration * quantity;
+    } else {
+      finalRental = normalRental * duration * quantity;
+    }
+    return acc + finalRental;
+  }, 0);
+
+  const handedOverTotal = handedOverItems.reduce(
+    (acc, row) => acc + rentalCalculation(row),
+    0
+  );
+
+  const grandTotal = handedOverTotal + notHandedOverTotal;
+
+  const calcTotalPaid = () => {
+    const advance = Number(invoiceObject?.advance) || 0;
+    const paysFromCtx = Number(totalPayments) || 0;
+    // fallback if context aggregate isn’t present
+    const paysFromRows = (invoiceObject?.payments ?? []).reduce(
+      (sum, p) => sum + (Number(p.invpay_amount) || 0),
+      0
+    );
+    const pays = paysFromCtx || paysFromRows;
+    return advance + pays;
+  };
+
+  const balanceDue = grandTotal - calcTotalPaid();
+
+  const issuedAt =
+    invoiceObject?.createdDate &&
+    dayjs(invoiceObject.createdDate).tz("Asia/Colombo");
+
   return (
-    <Box display={"flex"} flexDirection={"column"} alignItems={"center"}>
-      <div className="invoice">
-        <Box
-          display={"flex"}
-          flexDirection={"column"}
-          component={Paper}
+    <Box
+      sx={{
+        width: "100%",
+        display: "flex",
+        justifyContent: "center",
+        px: 2, // small gutter for very small screens
+      }}
+    >
+      <div className="invoice" style={{ width: "100%" }} ref={pdfRef}>
+        <Paper
           elevation={10}
           sx={{
-            width: "800px",
-            minHeight: "80vh",
-            height: "auto",
-            p: 3,
-            mt: 5,
+            mx: "auto",               // true centering
+            my: 3,
+            width: "100%",
+            maxWidth: INVOICE_MAX_WIDTH,
+            boxSizing: "border-box",
+            px: 4,
+            py: 3,
             borderRadius: 3,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
           }}
         >
           {/* Top */}
-          <Box sx={{ width: "100%", height: "20%", display: "flex" }}>
-            <Box display={"flex"} alignItems={"end"}>
-              <Typography variant="h5">Invoice to :</Typography>{" "}
+          <Box sx={{ width: "100%", display: "flex", gap: 2 }}>
+            <Box sx={{ display: "flex", alignItems: "flex-end" }}>
+              <Typography variant="h6">Invoice to :</Typography>
             </Box>
             <Box flexGrow={1} />
-            <Box width={"40%"}>
-              <Typography variant="h4" align="center" sx={{ p: 4 }}>
+            <Box sx={{ width: { xs: "50%", sm: "45%", md: "40%" } }}>
+              <Typography variant="h4" align="center" sx={{ py: 2 }}>
                 <strong>INVOICE</strong>
               </Typography>
-              <Stack gap={1}>
-                <Typography>Invoice id : {invoiceObject.InvoiceID}</Typography>
+              <Stack gap={0.5}>
+                <Typography>Invoice id : {invoiceObject?.InvoiceID}</Typography>
                 <Typography>
-                  Date :{" "}
-                  {invoiceObject.createdDate == null
-                    ? ""
-                    : new Date(invoiceObject.createdDate).toLocaleDateString()}
+                  Date : {issuedAt ? issuedAt.format("YYYY-MM-DD") : ""}
                 </Typography>
                 <Typography>
-                  Time :{" "}
-                  {invoiceObject.createdDate == null
-                    ? ""
-                    : new Date(invoiceObject.createdDate).toLocaleTimeString()}
+                  Time : {issuedAt ? issuedAt.format("HH:mm:ss") : ""}
                 </Typography>
               </Stack>
             </Box>
           </Box>
+
           {/* Middle */}
-          <Box sx={{ width: "100%", height: "20%", display: "flex" }}>
-            <Box width={"60%"}>
-              <Typography variant="h4">
-                {invoiceObject.customerDetails.cus_fname}{" "}
-                {invoiceObject.customerDetails.cus_lname}
+          <Box sx={{ width: "100%", display: "flex", mt: 2 }}>
+            <Box sx={{ width: { xs: "100%", md: "60%" } }}>
+              <Typography variant="h5" sx={{ lineHeight: 1.2 }}>
+                {invoiceObject?.customerDetails?.cus_fname}{" "}
+                {invoiceObject?.customerDetails?.cus_lname}
               </Typography>
-              <Box display={"flex"} sx={{ height: "80%", mt: 2 }}>
-                <Box height={"100%"}>
-                  {invoiceObject.customerDetails.cus_fname && (
+              <Box sx={{ display: "flex", mt: 1.5 }}>
+                <Box sx={{ pr: 1.5 }}>
+                  {invoiceObject?.customerDetails?.cus_fname && (
                     <>
-                      <AddIcCallOutlinedIcon fontSize={"10px"} sx={{ mb: 2 }} />
-                      <ContactMailOutlinedIcon fontSize={"10px"} />
+                      <AddIcCallOutlinedIcon fontSize="small" sx={{ mb: 1 }} />
+                      <br />
+                      <ContactMailOutlinedIcon fontSize="small" />
                     </>
                   )}
                 </Box>
-                <Box width={"100%"}>
-                  <Box sx={{ mb: 1.1 }}>
+                <Box sx={{ width: "100%" }}>
+                  <Box sx={{ mb: 1 }}>
                     <Typography>
-                      {invoiceObject.customerDetails.cus_phone_number}
+                      {invoiceObject?.customerDetails?.cus_phone_number || ""}
                     </Typography>
                   </Box>
                   <Box>
                     <Typography>
-                      {invoiceObject.customerDetails.cus_address1}
+                      {invoiceObject?.customerDetails?.cus_address1 || ""}
                     </Typography>
                     <Typography>
-                      {invoiceObject.customerDetails.cus_address2}
+                      {invoiceObject?.customerDetails?.cus_address2 || ""}
                     </Typography>
                   </Box>
                 </Box>
               </Box>
             </Box>
             <Box flexGrow={1} />
-            <Box width="40%"></Box>
+            <Box sx={{ width: { xs: "0%", md: "35%" } }} />
           </Box>
-          {/* body */}
-          <Box sx={{ width: "100%", height: "60%" }}>
-            {" "}
-            <InvoiceDocumentTable />
-          </Box>
-        </Box>
+
+          <Divider sx={{ my: 2 }} />
+
+          {/* FIRST TABLE: NOT handed over */}
+          {notHandedOverItems.length > 0 && (
+            <Box sx={{ width: "100%", mb: 2 }}>
+              <Typography
+                align="center"
+                sx={{ fontWeight: 700, color: "red", fontSize: "0.95rem", mb: 1 }}
+              >
+                The following items are NOT handed over yet. Cost calculated up to today:
+              </Typography>
+
+              <TableContainer>
+                <Table
+                  size="small"
+                  sx={{
+                    width: "100%",
+                    tableLayout: "fixed",
+                    "& .MuiTableCell-root": { py: 0.9, px: 1 },
+                  }}
+                >
+                  <TableHead>
+                    <TableRow>
+                      <TableCell align="center">Equipment</TableCell>
+                      <TableCell align="center">Quantity</TableCell>
+                      <TableCell align="center">Days</TableCell>
+                      <TableCell align="center">Rate/Day (LKR)</TableCell>
+                      <TableCell align="center">Total Cost (LKR)</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {notHandedOverItems.map((row, idx) => {
+                      const duration = today.diff(createdDate, "day") + 1;
+                      const rateJSX = displayRateJSX(row, duration);
+
+                      const total = (() => {
+                        const dateSet = Number(row.eqcat_dataset) || 0;
+                        const normalRental = Number(row.eq_rental) || 0;
+                        const specialRental = Number(row.spe_singleday_rent) || 0;
+                        const quantity = Number(row.inveq_borrowqty) || 0;
+                        const categoryId = Number(row.eqcat_id) || 0;
+
+                        let finalRental = 0;
+                        if (specialRental && categoryId == 2) {
+                          if (duration <= dateSet) {
+                            if (duration !== 1) finalRental = specialRental * 2 * quantity;
+                            if (duration === 1) finalRental = specialRental * 1 * quantity;
+                          } else {
+                            finalRental = normalRental * duration * quantity;
+                          }
+                        } else if (specialRental && categoryId != 2) {
+                          if (duration < dateSet) finalRental = specialRental * duration * quantity;
+                          else finalRental = normalRental * duration * quantity;
+                        } else {
+                          finalRental = normalRental * duration * quantity;
+                        }
+                        return finalRental;
+                      })();
+
+                      return (
+                        <TableRow key={idx}>
+                          <TableCell align="center">{row.eq_name}</TableCell>
+                          <TableCell align="center">{row.inveq_borrowqty}</TableCell>
+                          <TableCell align="center">{duration}</TableCell>
+                          <TableCell align="center">{rateJSX}</TableCell>
+                          <TableCell align="center">{total}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    <TableRow>
+                      <TableCell colSpan={4} align="right" sx={{ fontWeight: 600 }}>
+                        Total cost for NOT handed over items up to today:
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 600 }}>
+                        {notHandedOverTotal}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+
+          {/* SECOND TABLE: ONLY handed over */}
+          <TableContainer>
+            <Table
+              size="small"
+              sx={{
+                width: "100%",
+                tableLayout: "fixed",
+                "& .MuiTableCell-root": { py: 0.9, px: 1 },
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell align="center">Equipment Name</TableCell>
+                  <TableCell align="center">Borrowed Qty</TableCell>
+                  <TableCell align="center">Days</TableCell>
+                  <TableCell align="center">Rate/Day (LKR)</TableCell>
+                  <TableCell align="center">Item Total (LKR)</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {handedOverItems.map((row, index) => {
+                  const duration = handleDurationinDays(row.duration_in_days);
+                  const rateJSX = displayRateJSX(row, duration);
+                  return (
+                    <TableRow key={index}>
+                      <TableCell align="center">{row.eq_name}</TableCell>
+                      <TableCell align="center">{row.inveq_borrowqty}</TableCell>
+                      <TableCell align="center">{duration}</TableCell>
+                      <TableCell align="center">{rateJSX}</TableCell>
+                      <TableCell align="center">{rentalCalculation(row)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+
+                <TableRow>
+                  <TableCell colSpan={4} align="right" sx={{ fontWeight: 600 }}>
+                    Equipment Subtotal :
+                  </TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600 }}>
+                    {grandTotal}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Divider sx={{ my: 2 }} />
+
+          {/* Payments */}
+          <TableContainer>
+            <Table
+              size="small"
+              sx={{
+                width: "100%",
+                tableLayout: "fixed",
+                "& .MuiTableCell-root": { py: 0.9, px: 1 },
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell align="center">Payment Type</TableCell>
+                  <TableCell align="center">Amount (LKR)</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {invoiceObject?.advance ? (
+                  <TableRow>
+                    <TableCell align="center">Advance Payment</TableCell>
+                    <TableCell align="center">{invoiceObject.advance}</TableCell>
+                  </TableRow>
+                ) : null}
+
+                {(invoiceObject?.payments ?? []).map((p, i) => (
+                  <TableRow key={i}>
+                    <TableCell align="center">
+                      {dayjs(p.invpay_payment_date)
+                        .tz("Asia/Colombo")
+                        .format("DD/MM | HH:mm")}
+                    </TableCell>
+                    <TableCell align="center">{p.invpay_amount}</TableCell>
+                  </TableRow>
+                ))}
+
+                <TableRow>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>
+                    Total Paid :
+                  </TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600 }}>
+                    {calcTotalPaid()}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>
+                    Balance Due :
+                  </TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600 }}>
+                    {balanceDue}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
       </div>
+
       <Button
-        sx={{ width: "20px", mt: 2, color: "white" }}
+        sx={{ mt: 1, mb: 3, fontSize: "0.8rem" }}
         variant="contained"
         onClick={() =>
           handleDownload(
-            invoiceObject.customerDetails.cus_fname,
-            invoiceObject.InvoiceID
+            invoiceObject?.customerDetails?.cus_fname ?? "customer",
+            invoiceObject?.InvoiceID ?? "invoice"
           )
         }
       >
-        <BrowserUpdatedIcon />
+        <BrowserUpdatedIcon sx={{ mr: 1 }} />
+        Download PDF
       </Button>
     </Box>
   );
