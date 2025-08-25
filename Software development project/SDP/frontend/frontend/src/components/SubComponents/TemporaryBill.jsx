@@ -9,6 +9,8 @@ import {
   TableHead,
   TableRow,
   Typography,
+  Divider,
+  TableContainer,
 } from "@mui/material";
 import { InvoiceContext } from "../../Contexts/Contexts";
 import html2canvas from "html2canvas";
@@ -22,164 +24,349 @@ import timezone from "dayjs/plugin/timezone";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+const BILL_MAX_WIDTH = 420; // easy to change in one place
+
 const TemporaryBill = () => {
   const cashierName = localStorage.getItem("username");
-  const { invoiceObject, machineTotalCost, totalPayments, setTotalPayments } =
-    useContext(InvoiceContext);
+  const { invoiceObject, totalPayments } = useContext(InvoiceContext);
   const billRef = useRef(null);
 
-  const calculateTotalAdvanceAndPayments = () => {
-    return (invoiceObject?.advance || 0) + totalPayments || " - ";
+  // ---- calculations (unchanged) ----
+  const rentalCalculation = (row) => {
+    const dateSet = Number(row.eqcat_dataset) || 0;
+    const normalRental = Number(row.eq_rental) || 0;
+    const specialRental = Number(row.spe_singleday_rent) || 0;
+    const duration = Number(row.duration_in_days) || 0;
+    const quantity = Number(row.inveq_borrowqty) || 0;
+    const categoryId = Number(row.eqcat_id) || 0;
+
+    let finalRental = 0;
+    if (specialRental && categoryId == 2) {
+      if (duration <= dateSet) {
+        if (duration !== 1) finalRental = specialRental * 2 * quantity;
+        if (duration === 1) finalRental = specialRental * 1 * quantity;
+      } else {
+        finalRental = normalRental * duration * quantity;
+      }
+    } else if (specialRental && categoryId != 2) {
+      if (duration < dateSet) finalRental = specialRental * duration * quantity;
+      else finalRental = normalRental * duration * quantity;
+    } else {
+      finalRental = normalRental * duration * quantity;
+    }
+    return finalRental;
   };
 
+  // exact display logic (with Sinhala note) for Rate/Day
+  const displayRateJSX = (row, duration) => {
+    const dateSet = Number(row.eqcat_dataset) || 0;
+    const normalRental = Number(row.eq_rental) || 0;
+    const specialRental = Number(row.spe_singleday_rent) || 0;
+    const categoryId = Number(row.eqcat_id) || 0;
 
+    if (!duration) return normalRental;
+
+    if (specialRental && categoryId === 2) {
+      if (duration <= dateSet) {
+        if (duration !== 1) {
+          return (
+            <>
+              {specialRental * 2}
+              <span style={{ fontSize: "0.7rem" }}> : දින දෙකකට පමණි</span>
+            </>
+          );
+        }
+        return specialRental;
+      }
+      return normalRental;
+    } else if (specialRental && categoryId !== 2) {
+      if (duration < dateSet) return specialRental;
+      return normalRental;
+    }
+    return normalRental;
+  };
 
   const handleDurationinDays = (duration) => {
-    if (duration > 0) {
-      return duration
-    } else {
-      const today=dayjs(new Date());
-      const createdDate = dayjs(invoiceObject.createdDate);
-
-      let diffInDays = today.diff(createdDate,'day')
-      diffInDays=diffInDays+1;
-      return diffInDays
-    }
+    const d = Number(duration) || 0;
+    if (d > 0) return d;
+    const t = dayjs(new Date());
+    const c = dayjs(invoiceObject?.createdDate);
+    return t.diff(c, "day") + 1;
   };
-
 
   const handleDownload = (name, invoiceid) => {
     const capture = billRef.current;
-
     const options = {
       scale: 2,
       useCORS: true,
       scrollY: -window.scrollY,
       windowHeight: document.documentElement.scrollHeight,
     };
-
     html2canvas(capture, options).then((canvas) => {
       const imgData = canvas.toDataURL("image/png");
-
       const pdfWidth = canvas.width * 0.264583;
       const pdfHeight = canvas.height * 0.264583;
-
-      const doc = new jsPDF({
-        unit: "mm",
-        format: [pdfWidth, pdfHeight],
-      });
-
+      const doc = new jsPDF({ unit: "mm", format: [pdfWidth, pdfHeight] });
       doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
       doc.save(`${name}-${invoiceid}-tempBill.pdf`);
     });
   };
 
+  // ---- data splits ----
+  const eqdetails = invoiceObject?.eqdetails ?? [];
+  const notHandedOverItems = eqdetails.filter((row) => !row.inveq_return_date);
+  const handedOverItems = eqdetails.filter((row) => !!row.inveq_return_date);
+
+  // ---- totals ----
+  const today = dayjs();
+  const createdDate = dayjs(invoiceObject?.createdDate);
+
+  const notHandedOverTotal = notHandedOverItems.reduce((acc, row) => {
+    const duration = today.diff(createdDate, "day") + 1; // include today
+    const dateSet = Number(row.eqcat_dataset) || 0;
+    const normalRental = Number(row.eq_rental) || 0;
+    const specialRental = Number(row.spe_singleday_rent) || 0;
+    const quantity = Number(row.inveq_borrowqty) || 0;
+    const categoryId = Number(row.eqcat_id) || 0;
+
+    let finalRental = 0;
+    if (specialRental && categoryId == 2) {
+      if (duration <= dateSet) {
+        if (duration !== 1) finalRental = specialRental * 2 * quantity;
+        if (duration === 1) finalRental = specialRental * 1 * quantity;
+      } else {
+        finalRental = normalRental * duration * quantity;
+      }
+    } else if (specialRental && categoryId != 2) {
+      if (duration < dateSet) finalRental = specialRental * duration * quantity;
+      else finalRental = normalRental * duration * quantity;
+    } else {
+      finalRental = normalRental * duration * quantity;
+    }
+    return acc + finalRental;
+  }, 0);
+
+  const handedOverTotal = handedOverItems.reduce(
+    (acc, row) => acc + rentalCalculation(row),
+    0
+  );
+
+  const grandTotal = handedOverTotal + notHandedOverTotal;
+
+  const calculateTotalAdvanceAndPayments = () => {
+    const adv = Number(invoiceObject?.advance) || 0;
+    const pays = Number(totalPayments) || 0;
+    return adv + pays;
+  };
+
+  const balanceDue = grandTotal - calculateTotalAdvanceAndPayments();
+
   return (
-    <Box display={"flex"} flexDirection={"column"} alignItems={"center"}>
-      <div ref={billRef} className="bill">
-        <Box
-          component={Paper}
+    <Box
+      sx={{
+        width: "100%",
+        display: "flex",
+        justifyContent: "center",
+        px: 2, // small gutter on very small screens
+      }}
+    >
+      <div ref={billRef} className="bill" style={{ width: "100%" }}>
+        <Paper
           elevation={5}
           sx={{
+            mx: "auto",                // center horizontally (prevents drift)
+            my: 2,
+            width: "100%",
+            maxWidth: BILL_MAX_WIDTH,  // predictable card width
+            boxSizing: "border-box",   // include padding in width
+            px: 3,
+            py: 3,
             display: "flex",
-            p: 5,
-            width: "400px",
             flexDirection: "column",
-            alignItems: "center",
+            alignItems: "stretch",     // children take full width
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              paddingBottom: 20,
-            }}
-          >
-            <img style={{ width: "50px" }} src={logo} alt="" />
-            <Typography
-              variant="h5"
-              align="center"
-              sx={{ fontSize: "0.75rem" }}
-            >
-              Enterprises
+          {/* Header */}
+          <Box sx={{ display: "flex",justifyContent:'center', alignItems: "center", gap: 2, pb: 1 }}>
+            <img style={{ width: 50, height: 50, objectFit: "contain" }} src={logo} alt="" />
+            <Typography variant="h5" align="left" sx={{ fontSize: "1rem" }}>
+              T.A Enterprises
             </Typography>
-          </div>
-          <Typography
-            align="center"
-            variant="caption"
-            sx={{ fontSize: "0.75rem" }}
-          >
-            භාණ්ඩ රැගෙන යාම/ බාර දීම/ මුදල් ගෙවීම සඳහා නිකුත් කරන
+          </Box>
+
+          <Typography align="center" variant="caption" sx={{ fontSize: "0.85rem" }}>
+            Temporary Bill for Equipment Rental / Payment / Return
           </Typography>
-          <Typography align="center" sx={{ fontSize: "0.75rem" }}>
-            - තාවකාලික බිල්පත -
+          <Typography align="center" sx={{ fontSize: "0.85rem", fontWeight: 600 }}>
+            - TEMPORARY BILL -
           </Typography>
-          <br />
-          <Box>
-            <Typography align="left" sx={{ fontSize: "0.75rem" }}>
-              බිල්පත් අංකය : {invoiceObject.InvoiceID}
+
+          <Divider sx={{ my: 1.5 }} />
+
+          {/* Meta */}
+          <Box sx={{ width: "100%" }}>
+            <Typography sx={{ fontSize: "0.85rem" }}>
+              Bill No : {invoiceObject?.InvoiceID}
             </Typography>
-            <Typography align="left" sx={{ fontSize: "0.75rem" }}>
-              ගෙනගිය දිනය | වේලාව :{" "}
-              {invoiceObject.createdDate
-                ? new Date(invoiceObject.createdDate).toLocaleString()
+            <Typography sx={{ fontSize: "0.85rem" }}>
+              Issued Date & Time :{" "}
+              {invoiceObject?.createdDate
+                ? dayjs(invoiceObject.createdDate)
+                    .tz("Asia/Colombo")
+                    .format("YYYY-MM-DD HH:mm:ss")
                 : ""}
             </Typography>
+            <Typography sx={{ fontSize: "0.85rem" }}>
+              Customer Name : {invoiceObject?.customerDetails?.cus_fname}{" "}
+              {invoiceObject?.customerDetails?.cus_lname}
+            </Typography>
+            <Typography sx={{ fontSize: "0.85rem" }}>Issued By: {cashierName}</Typography>
+            <Typography sx={{ fontSize: "0.85rem" }}>Contact : 0777 593 701</Typography>
+          </Box>
 
-            <Typography align="left" sx={{ fontSize: "0.75rem" }}>
-              පාරිභෝගික නාමය : {invoiceObject.customerDetails.cus_fname}{" "}
-              {invoiceObject.customerDetails.cus_lname}
-            </Typography>
-            <br />
-            <Typography sx={{ fontSize: "0.75rem" }}>
-              බිල්පත ලබාදුන්නේ: {cashierName}
-            </Typography>
-            <Typography sx={{ fontSize: "0.75rem" }}>
-              විමසීම් : 0777 593 701
-            </Typography>
+          <Divider sx={{ my: 1.5 }} />
 
-            <br />
-            <Table>
+          {/* Table 1: Not handed over */}
+          {notHandedOverItems.length > 0 && (
+            <Box sx={{ width: "100%", mb: 2 }}>
+              <Typography
+                align="center"
+                sx={{ fontWeight: 700, color: "red", fontSize: "0.85rem", mb: 1 }}
+              >
+                The following items are NOT handed over yet. Cost calculated up to today:
+              </Typography>
+
+              <TableContainer sx={{ width: "100%" }}>
+                <Table
+                  size="small"
+                  sx={{
+                    width: "100%",
+                    tableLayout: "fixed",
+                    "& .MuiTableCell-root": { py: 0.75, px: 1 },
+                  }}
+                >
+                  <TableHead>
+                    <TableRow>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        Equipment
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        Quantity
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        Days
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        Rate/Day (LKR)
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        Total Cost (LKR)
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {notHandedOverItems.map((row, idx) => {
+                      const duration = today.diff(createdDate, "day") + 1; // include today
+                      const rateJSX = displayRateJSX(row, duration);
+
+                      const total = (() => {
+                        const dateSet = Number(row.eqcat_dataset) || 0;
+                        const normalRental = Number(row.eq_rental) || 0;
+                        const specialRental = Number(row.spe_singleday_rent) || 0;
+                        const quantity = Number(row.inveq_borrowqty) || 0;
+                        const categoryId = Number(row.eqcat_id) || 0;
+
+                        let finalRental = 0;
+                        if (specialRental && categoryId == 2) {
+                          if (duration <= dateSet) {
+                            if (duration !== 1) finalRental = specialRental * 2 * quantity;
+                            if (duration === 1) finalRental = specialRental * 1 * quantity;
+                          } else {
+                            finalRental = normalRental * duration * quantity;
+                          }
+                        } else if (specialRental && categoryId != 2) {
+                          if (duration < dateSet) finalRental = specialRental * duration * quantity;
+                          else finalRental = normalRental * duration * quantity;
+                        } else {
+                          finalRental = normalRental * duration * quantity;
+                        }
+                        return finalRental;
+                      })();
+
+                      return (
+                        <TableRow key={idx}>
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                            {row.eq_name}
+                          </TableCell>
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                            {row.inveq_borrowqty}
+                          </TableCell>
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                            {duration}
+                          </TableCell>
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                            {rateJSX}
+                          </TableCell>
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                            {total}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    <TableRow>
+                      <TableCell
+                        colSpan={4}
+                        align="right"
+                        sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                      >
+                        Total cost for NOT handed over items up to today:
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                        {notHandedOverTotal}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          )}
+
+          {/* Table 2: Handed over */}
+          <TableContainer sx={{ width: "100%" }}>
+            <Table
+              size="small"
+              sx={{
+                width: "100%",
+                tableLayout: "fixed",
+                "& .MuiTableCell-root": { py: 0.75, px: 1 },
+              }}
+            >
               <TableHead>
                 <TableRow>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    බාරදුන් දිනය | වේලාව
+                    Equipment Name
                   </TableCell>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    භාණ්ඩය
+                    Borrowed Qty
                   </TableCell>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    ප්‍රමාණය
+                    Days
                   </TableCell>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    දින
+                    Rate/Day (LKR)
                   </TableCell>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    දිනකට(රු.)
+                    Item Total (LKR)
                   </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {invoiceObject.eqdetails &&
-                  invoiceObject.eqdetails.map((row, index) => (
-                    <TableRow key={index}>
-                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                        {row.inveq_return_date
-                          ? `${new Date(
-                              row.inveq_return_date
-                            ).toLocaleDateString([], {
-                              month: "2-digit",
-                              day: "2-digit",
-                            })} ${new Date(
-                              row.inveq_return_date
-                            ).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}`
-                          : "බාර දී නැත"}
-                      </TableCell>
+                {handedOverItems.map((row, index) => {
+                  const duration = handleDurationinDays(row.duration_in_days);
+                  const rateJSX = displayRateJSX(row, duration);
 
+                  return (
+                    <TableRow key={index}>
                       <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                         {row.eq_name}
                       </TableCell>
@@ -187,44 +374,61 @@ const TemporaryBill = () => {
                         {row.inveq_borrowqty}
                       </TableCell>
                       <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                        {handleDurationinDays(row.duration_in_days)}
+                        {duration}
                       </TableCell>
                       <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                        {row.eq_rental}
+                        {rateJSX}
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        {rentalCalculation(row)}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );
+                })}
+
                 <TableRow>
                   <TableCell
                     colSpan={4}
                     align="right"
-                    sx={{ fontSize: "0.75rem" }}
+                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
                   >
-                    බාරදුන් භාණ්ඩ සඳහා මුලු මුදල :
+                    Equipment Subtotal :
                   </TableCell>
-                  <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    {`${machineTotalCost} `}
+                  <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                    {grandTotal}
                   </TableCell>
                 </TableRow>
               </TableBody>
             </Table>
-            <br />
-            <Table stickyHeader sx={{ minWidth: 10 }} aria-label="simple table">
-              <TableHead sx={{ height: "80px" }}>
+          </TableContainer>
+
+          <Divider sx={{ my: 1.5 }} />
+
+          {/* Payments */}
+          <TableContainer sx={{ width: "100%" }}>
+            <Table
+              size="small"
+              sx={{
+                width: "100%",
+                tableLayout: "fixed",
+                "& .MuiTableCell-root": { py: 0.75, px: 1 },
+              }}
+            >
+              <TableHead>
                 <TableRow>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    අංකය
+                    Payment Type
                   </TableCell>
                   <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    ගෙවූ මුදල(රු.)
+                    Amount (LKR)
                   </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {invoiceObject.advance ? (
+                {invoiceObject?.advance ? (
                   <TableRow>
                     <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                      මූලික ගෙවීම
+                      Advance Payment
                     </TableCell>
                     <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                       {invoiceObject.advance}
@@ -232,62 +436,53 @@ const TemporaryBill = () => {
                   </TableRow>
                 ) : null}
 
-                {invoiceObject.payments.map((payment, index) => (
+                {(invoiceObject?.payments ?? []).map((payment, index) => (
                   <TableRow key={index}>
                     <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                       {dayjs(payment.invpay_payment_date)
                         .tz("Asia/Colombo")
                         .format(`DD/MM | HH:mm`)}
                     </TableCell>
-
                     <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                       {payment.invpay_amount}
                     </TableCell>
                   </TableRow>
                 ))}
+
                 <TableRow>
-                  <TableCell
-                    colSpan={1}
-                    align="right"
-                    sx={{ fontSize: "0.75rem" }}
-                  >
-                    ගෙවූ මුලු මුදල :
+                  <TableCell align="right" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                    Total Paid :
                   </TableCell>
-                  <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                    {`${calculateTotalAdvanceAndPayments()} `}
+                  <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                    {calculateTotalAdvanceAndPayments()}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell align="right" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                    Balance Due :
+                  </TableCell>
+                  <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                    {balanceDue}
                   </TableCell>
                 </TableRow>
               </TableBody>
             </Table>
-
-            <div>
-              <Typography
-                align="center"
-                sx={{ padding: 2, fontSize: "0.75rem" }}
-              >
-                {invoiceObject.customerDetails.cus_fname}{" "}
-                {invoiceObject.customerDetails.cus_lname} වන මා ඉහත සඳහන් දිනදී
-                මෙම භාණ්ඩ ගෙනගිය බවටත්, මෙම ගෙවීම් අනුමත කර බවටත්, මම සනාථ කරමි.
-              </Typography>
-              <Typography align="center" sx={{ paddingTop: 5 }}>
-                ................................................
-              </Typography>
-            </div>
-          </Box>
-        </Box>
+          </TableContainer>
+        </Paper>
       </div>
+
       <Button
-        sx={{ mt: 2, fontSize: "0.75rem" }}
+        sx={{ mt: 1, mb: 2, fontSize: "0.75rem" }}
         variant="contained"
         onClick={() =>
           handleDownload(
-            invoiceObject.customerDetails.cus_fname,
-            invoiceObject.InvoiceID
+            invoiceObject?.customerDetails?.cus_fname ?? "customer",
+            invoiceObject?.InvoiceID ?? "invoice"
           )
         }
       >
         <BrowserUpdatedIcon sx={{ mr: 1 }} />
-        PDF එකක් බාගත කරන්න
+        Download PDF
       </Button>
     </Box>
   );

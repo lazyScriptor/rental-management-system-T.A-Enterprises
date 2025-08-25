@@ -475,7 +475,7 @@ function InvoiceDetailsWindowDown(props) {
         )}
         <Button
           onClick={handlePdfButtonClick}
-          disabled={buttonDesable}
+
           variant="contained"
           sx={{ height: "60px", width: "20px", mt: 1 }}
         >
@@ -483,7 +483,7 @@ function InvoiceDetailsWindowDown(props) {
         </Button>
         <Button
           onClick={handleOtherDialogButtonClick}
-          disabled={buttonDesable}
+
           variant="outlined"
           sx={{ height: "60px", width: "20px", mt: 1 }}
         >

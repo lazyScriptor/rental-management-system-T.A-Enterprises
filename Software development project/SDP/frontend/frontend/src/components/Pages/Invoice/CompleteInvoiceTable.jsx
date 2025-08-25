@@ -84,10 +84,10 @@ function CompleteInvoiceTable() {
       if (specialRental && categoryId == 2) {
         if (duration <= dateSet) {
           if (duration != 1) {
-            finalRental = [specialRental * 2,": දින දෙකකට පමණි"];
+            finalRental = [specialRental * 2, ": දින දෙකකට පමණි"];
           }
           if (duration == 1) {
-            finalRental = specialRental * 1 ;
+            finalRental = specialRental * 1;
           }
         } else {
           finalRental = normalRental;
