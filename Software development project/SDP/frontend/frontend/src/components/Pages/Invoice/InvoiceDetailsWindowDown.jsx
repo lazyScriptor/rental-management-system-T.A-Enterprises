@@ -1,12 +1,11 @@
 import {
   Box,
   Paper,
-  Stack,
   Typography,
   Dialog,
-  DialogTitle,
   DialogContent,
   TextField,
+  InputAdornment,
 } from "@mui/material";
 import { Button } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
@@ -19,9 +18,17 @@ import TemporaryBill from "../../SubComponents/TemporaryBill";
 import ReceiptIcon from "@mui/icons-material/Receipt";
 
 function InvoiceDetailsWindowDown(props) {
-  const [discount, setDiscount] = useState();
   const [openDialog, setOpenDialog] = useState(false);
   const [openOtherDialog, setOpenOtherDialog] = useState(false);
+
+  // Discount state and helpers
+  const [discountInput, setDiscountInput] = useState(0);
+  const [netPayable, setNetPayable] = useState(0);
+
+  const toNumber = (v) =>
+    v === undefined || v === null || v === "" || isNaN(Number(v)) ? 0 : Number(v);
+  const fmtLKR = (n) => `${toNumber(n).toLocaleString("en-LK")} LKR`;
+
   const handlePdfButtonClick = () => {
     setOpenDialog(true);
   };
@@ -40,6 +47,7 @@ function InvoiceDetailsWindowDown(props) {
     handleCreateNew,
     handleInvoiceSearch,
   } = props;
+
   const {
     fullDetailsEquipmentArray,
     setFullDetailsEquipmentArray,
@@ -64,48 +72,84 @@ function InvoiceDetailsWindowDown(props) {
   } = useContext(InvoiceContext);
 
   const calculateTotalPayments = () => {
-    let total = 0;
-    for (const payment of invoiceObject.payments) {
-      total = payment.invpay_amount + total;
+    let total = toNumber(invoiceObject?.advance);
+    for (const payment of invoiceObject?.payments || []) {
+      total += toNumber(payment?.invpay_amount);
     }
-    total = total + invoiceObject.advance;
     return total;
   };
 
   useEffect(() => {
-    if (invoiceObject.inv_completed_datetime != null) {
-      console.log("type is", invoiceObject.inv_completed_datetime);
-      console.log("completed date has a value");
+    const completed = invoiceObject?.inv_completed_datetime != null;
+    setButtonDisable(!!completed);
 
-      setButtonDisable(true);
-    } else {
-      setButtonDisable(false);
-      console.log("type is", invoiceObject.inv_completed_datetime);
+    const advAndPays = calculateTotalPayments();
+    const existingDiscount = toNumber(invoiceObject?.discount);
+    setDiscountInput(existingDiscount);
 
-      console.log("completed date is null");
-    }
-    setDiscount(machineTotalCost - calculateTotalPayments());
+    const balance = Math.max(
+      0,
+      toNumber(machineTotalCost) - advAndPays - existingDiscount
+    );
+    setNetPayable(balance);
   }, [machineTotalCost, invoiceObject]);
 
-  const handlediscount = (value) => {
-    console.log(calculateTotalPayments(), value);
-    if (value > machineTotalCost - calculateTotalPayments()) {
-      setDiscount(machineTotalCost - calculateTotalPayments());
+  const handleDiscountChange = (value) => {
+    const v = toNumber(value);
+    const advAndPays = calculateTotalPayments();
+    const maxDiscount = Math.max(0, toNumber(machineTotalCost) - advAndPays);
+
+    if (v > maxDiscount) {
+      setDiscountInput(maxDiscount);
+      setNetPayable(0);
       Swal.fire({
         title: "Cost Error?",
-        text: "Please enter the discount lower than the cost",
+        text: "Please enter a discount less than or equal to the remaining balance.",
         icon: "error",
       });
     } else {
-      setDiscount(machineTotalCost - calculateTotalPayments() - value);
-      return machineTotalCost - calculateTotalPayments() - value;
+      setDiscountInput(v);
+      setNetPayable(
+        Math.max(0, toNumber(machineTotalCost) - advAndPays - v)
+      );
     }
   };
-  const handleInvoiceSubmit = async () => {
-    // localStorage.setItem("CIObject", JSON.stringify(invoiceObject));
-    // const localInvoiceObject = localStorage.getItem("CIObject");
-    console.log("Local storage retrieval", invoiceObject.InvoiceID);
 
+  const applyDiscount = async () => {
+    try {
+      const payload = { ...invoiceObject, discount: toNumber(discountInput) };
+      setInvoiceObject(payload);
+
+      if (invoiceSearchBtnStatus) {
+        await axios.post("http://localhost:8085/updateInvoiceDetails", payload);
+        Swal.fire({
+          icon: "success",
+          title: "Discount applied",
+          showConfirmButton: false,
+          timer: 800,
+        });
+        handleInvoiceSearch(invoiceObject.InvoiceID);
+      } else {
+        Swal.fire({
+          icon: "success",
+          title: "Discount set",
+          text: "It will be saved with the invoice.",
+          showConfirmButton: false,
+          timer: 1000,
+        });
+      }
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "Failed to apply discount",
+        text: "Please try again.",
+      });
+      console.error("Error applying discount:", error);
+    }
+  };
+
+  const handleInvoiceSubmit = async () => {
+    // Create new invoice
     if (invoiceObject) {
       if (invoiceObject.InvoiceID > 0) {
         if (
@@ -113,13 +157,15 @@ function InvoiceDetailsWindowDown(props) {
           invoiceObject.customerDetails.cus_id > 0
         ) {
           if (invoiceObject.eqdetails.length > 0) {
-            if (invoiceObject.advance > 0) {
-              console.log("Local storage retrieval", invoiceObject);
+            if (toNumber(invoiceObject.advance) > 0) {
               try {
-                // Send the object to the backend
+                const payload = {
+                  ...invoiceObject,
+                  discount: toNumber(discountInput),
+                };
                 await axios.post(
                   "http://localhost:8085/createInvoiceDetails",
-                  invoiceObject
+                  payload
                 );
                 Swal.fire({
                   position: "top-end",
@@ -128,8 +174,6 @@ function InvoiceDetailsWindowDown(props) {
                   showConfirmButton: false,
                   timer: 1500,
                 });
-
-                console.log("Invoice details updated successfully");
               } catch (error) {
                 Swal.fire({
                   icon: "error",
@@ -150,7 +194,6 @@ function InvoiceDetailsWindowDown(props) {
                 text: "Didn't he pay you!",
                 footer: '<a href="#">Why do I have this issue?</a>',
               });
-              console.log("Advance payment is not greater than 0");
             }
           } else {
             Swal.fire({
@@ -159,7 +202,6 @@ function InvoiceDetailsWindowDown(props) {
               text: "Enter machine details!",
               footer: '<a href="#">Why do I have this issue?</a>',
             });
-            console.log("No equipment details found");
           }
         } else {
           Swal.fire({
@@ -168,9 +210,6 @@ function InvoiceDetailsWindowDown(props) {
             text: "Enter Customer Details!",
             footer: '<a href="#">Why do I have this issue?</a>',
           });
-          console.log(
-            "Customer ID is not greater than 0 MEANS Customer is not found"
-          );
         }
       } else {
         Swal.fire({
@@ -179,12 +218,12 @@ function InvoiceDetailsWindowDown(props) {
           text: "Create a New Invoice!",
           footer: '<a href="#">Why do I have this issue?</a>',
         });
-        console.log("Invoice Id should be present");
       }
     } else {
       console.log("Invoice object is undefined");
     }
   };
+
   const handleInvoiceUpdate = async () => {
     if (invoiceObject) {
       if (invoiceObject.InvoiceID > 0) {
@@ -193,12 +232,15 @@ function InvoiceDetailsWindowDown(props) {
           invoiceObject.customerDetails.cus_id > 0
         ) {
           if (invoiceObject.eqdetails.length > 0) {
-            if (invoiceObject.advance > 0) {
+            if (toNumber(invoiceObject.advance) > 0) {
               try {
-                // Send the object to the backend
+                const payload = {
+                  ...invoiceObject,
+                  discount: toNumber(discountInput),
+                };
                 await axios.post(
                   "http://localhost:8085/updateInvoiceDetails",
-                  invoiceObject
+                  payload
                 );
                 Swal.fire({
                   position: "top-end",
@@ -208,7 +250,6 @@ function InvoiceDetailsWindowDown(props) {
                   timer: 500,
                 });
                 setUpdateBtnStatus(false);
-
                 handleInvoiceSearch(invoiceObject.InvoiceID);
               } catch (error) {
                 Swal.fire({
@@ -230,7 +271,6 @@ function InvoiceDetailsWindowDown(props) {
                 text: "Didn't he pay you!",
                 footer: '<a href="#">Why do I have this issue?</a>',
               });
-              console.log("Advance payment is not greater than 0");
             }
           } else {
             Swal.fire({
@@ -239,7 +279,6 @@ function InvoiceDetailsWindowDown(props) {
               text: "Enter machine details!",
               footer: '<a href="#">Why do I have this issue?</a>',
             });
-            console.log("No equipment details found");
           }
         } else {
           Swal.fire({
@@ -248,9 +287,6 @@ function InvoiceDetailsWindowDown(props) {
             text: "Enter Customer Details!",
             footer: '<a href="#">Why do I have this issue?</a>',
           });
-          console.log(
-            "Customer ID is not greater than 0 MEANS Customer is not found"
-          );
         }
       } else {
         Swal.fire({
@@ -259,12 +295,12 @@ function InvoiceDetailsWindowDown(props) {
           text: "Create a New Invoice!",
           footer: '<a href="#">Why do I have this issue?</a>',
         });
-        console.log("Invoice Id should be present");
       }
     } else {
       console.log("Invoice object is undefined");
     }
   };
+
   const handleCompletedButtonClick = async () => {
     try {
       invoiceObject.eqdetails.forEach((element) => {
@@ -276,7 +312,6 @@ function InvoiceDetailsWindowDown(props) {
             confirmButtonText: "It is okay",
             denyButtonText: `Then wait`,
           }).then((result) => {
-            /* Read more about isConfirmed, isDenied below */
             if (result.isConfirmed) {
               Swal.fire("Saved!", "", "success");
               invoiceObject.invoiceCompletedDate = new Date();
@@ -296,6 +331,7 @@ function InvoiceDetailsWindowDown(props) {
       console.log(e);
     }
   };
+
   return (
     <>
       <Paper
@@ -316,35 +352,46 @@ function InvoiceDetailsWindowDown(props) {
               display={"flex"}
               justifyContent={"space-between"}
               alignItems={"center"}
+              gap={2}
             >
               <TextField
-                defaultValue={0}
-                sx={{ alignSelf: "end" }}
-                onChange={(e) => handlediscount(e.target.value)}
-                id="outlined-basic"
-                label="Discount"
+                type="number"
+                value={discountInput}
+                onChange={(e) => handleDiscountChange(e.target.value)}
+                id="discount-input"
+                label="Discount (LKR)"
                 variant="outlined"
+                sx={{ alignSelf: "end", maxWidth: 240 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">LKR</InputAdornment>
+                  ),
+                  inputProps: { min: 0 },
+                }}
+                disabled={buttonDesable}
               />
+              <Button
+                variant="contained"
+                onClick={applyDiscount}
+                disabled={
+                  buttonDesable ||
+                  toNumber(invoiceObject?.discount) === toNumber(discountInput)
+                }
+              >
+                Apply Discount
+              </Button>
               <Typography
                 sx={{
-                  color: discount ? "red" : "green",
                   fontWeight: "bold",
+                  color: netPayable > 0 ? "red" : "green",
                 }}
               >
-                Payment amount : {discount} LKR
+                Balance after discount : {fmtLKR(netPayable)}
               </Typography>
             </Box>
           )}
         </Box>
 
-        {/* <Box width="60%" sx={{display:"flex",flexDirection:"column",gap:3}}>
-            <Typography variant='h6'>Advance</Typography>
-            <Typography variant='h7'>Payments</Typography>
-        </Box>
-        <Box width="40%" sx={{display:"flex",flexDirection:"column",gap:3}}>
-            <Typography variant='h6' sx={{textAlign:"end"}}>2000 LKR</Typography>
-            <Typography variant='h7' sx={{textAlign:"end"}}></Typography>
-        </Box> */}
         <Box
           sx={{
             height: "100%",
@@ -442,6 +489,44 @@ function InvoiceDetailsWindowDown(props) {
                   </Typography>
                 </Box>
               )}
+
+              {/* Discount row */}
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography
+                  variant="h6"
+                  sx={{ color: "#1976d2", fontWeight: "bold" }}
+                >
+                  Discount
+                </Typography>
+                <Typography
+                  variant="body1"
+                  sx={{ color: "#1976d2", fontWeight: "bold" }}
+                >
+                  {fmtLKR(discountInput)}
+                </Typography>
+              </Box>
+
+              {/* Balance row */}
+              <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    color: netPayable > 0 ? "red" : "green",
+                    fontWeight: "bold",
+                  }}
+                >
+                  Balance
+                </Typography>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    color: netPayable > 0 ? "red" : "green",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {fmtLKR(netPayable)}
+                </Typography>
+              </Box>
             </Box>
           </Box>
           <Box
@@ -452,6 +537,7 @@ function InvoiceDetailsWindowDown(props) {
           ></Box>
         </Box>
       </Paper>
+
       <Box display={"flex"} alignItems={"center"} gap={1}>
         {invoiceSearchBtnStatus == true ? (
           <Button
@@ -475,7 +561,6 @@ function InvoiceDetailsWindowDown(props) {
         )}
         <Button
           onClick={handlePdfButtonClick}
-
           variant="contained"
           sx={{ height: "60px", width: "20px", mt: 1 }}
         >
@@ -483,7 +568,6 @@ function InvoiceDetailsWindowDown(props) {
         </Button>
         <Button
           onClick={handleOtherDialogButtonClick}
-
           variant="outlined"
           sx={{ height: "60px", width: "20px", mt: 1 }}
         >
@@ -500,6 +584,7 @@ function InvoiceDetailsWindowDown(props) {
           O
         </Button>
       </Box>
+
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
@@ -510,6 +595,7 @@ function InvoiceDetailsWindowDown(props) {
           <InvoicePdfWarehouseHandler />
         </DialogContent>
       </Dialog>
+
       <Dialog open={openOtherDialog} onClose={handleCloseDialog}>
         <DialogContent>
           <TemporaryBill />

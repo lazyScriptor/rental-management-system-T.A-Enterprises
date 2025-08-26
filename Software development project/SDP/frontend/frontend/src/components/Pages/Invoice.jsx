@@ -277,6 +277,7 @@ function Invoice() {
         setInvoiceId(res.data);
         updateValue("InvoiceID", res.data);
         updateValue("createdDate", currentDate);
+        updateValue("discount", 0);
       });
     } catch (error) {
       console.log("handleSearch Createinvoice error", error);
@@ -304,6 +305,7 @@ function Invoice() {
         });
         updateValue("InvoiceID", response.data.InvoiceID);
         updateValue("iDstatus", response.data.idStatus);
+        updateValue("discount", response.data.discount ?? 0);
         updateValue(
           "inv_completed_datetime",
           response.data.inv_completed_datetime

@@ -417,13 +417,14 @@ export async function createInvoiceDetails(InvoiceCompleteDetail) {
   // Update invoice details
   try {
     await pool.query(
-      "UPDATE invoice SET inv_advance = ?, inv_special_message = ?, inv_idcardstatus = ?,inv_cusid=?,inv_createddate=?, inv_updatedstatus = ? WHERE inv_id = ?",
+      "UPDATE invoice SET inv_advance = ?, inv_special_message = ?, inv_idcardstatus = ?, inv_cusid = ?, inv_createddate = ?, inv_discount = ?, inv_updatedstatus = ? WHERE inv_id = ?",
       [
         InvoiceCompleteDetail.advance,
         "", // Empty string for inv_special_message
         InvoiceCompleteDetail.iDstatus,
         InvoiceCompleteDetail.customerDetails.cus_id, // Assuming idStatus is a boolean value
         formattedDate, // Format the date correctly for MySQL
+        InvoiceCompleteDetail.discount ?? 0,
         1,
         InvoiceCompleteDetail.InvoiceID,
       ]
@@ -704,11 +705,12 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
   }
   try {
     await pool.query(
-      "UPDATE invoice SET inv_special_message = ?,inv_rating = ?,inv_completed_datetime=? WHERE inv_id = ?",
+      "UPDATE invoice SET inv_special_message = ?, inv_rating = ?, inv_completed_datetime = ?, inv_discount = COALESCE(?, inv_discount) WHERE inv_id = ?",
       [
         InvoiceCompleteDetail.inv_special_message,
         InvoiceCompleteDetail.inv_rating,
         createdDate,
+        InvoiceCompleteDetail.discount ?? null,
         InvoiceCompleteDetail.InvoiceID,
       ]
     );

@@ -150,8 +150,9 @@ const TemporaryBill = () => {
     (acc, row) => acc + rentalCalculation(row),
     0
   );
-
+  const discount = Number(invoiceObject?.discount) || 0;
   const grandTotal = handedOverTotal + notHandedOverTotal;
+  const netTotal = Math.max(0, grandTotal - discount);
 
   const calculateTotalAdvanceAndPayments = () => {
     const adv = Number(invoiceObject?.advance) || 0;
@@ -159,7 +160,7 @@ const TemporaryBill = () => {
     return adv + pays;
   };
 
-  const balanceDue = grandTotal - calculateTotalAdvanceAndPayments();
+  const balanceDue = netTotal - calculateTotalAdvanceAndPayments();
 
   return (
     <Box
@@ -396,6 +397,32 @@ const TemporaryBill = () => {
                   </TableCell>
                   <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
                     {grandTotal}
+                  </TableCell>
+                </TableRow>
+                {discount > 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      align="right"
+                      sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                    >
+                      Discount :
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                      -{discount}
+                    </TableCell>
+                  </TableRow>
+                )}
+                <TableRow>
+                  <TableCell
+                    colSpan={4}
+                    align="right"
+                    sx={{ fontSize: "0.8rem", fontWeight: 700 }}
+                  >
+                    Net Total :
+                  </TableCell>
+                  <TableCell align="center" sx={{ fontSize: "0.8rem", fontWeight: 700 }}>
+                    {netTotal}
                   </TableCell>
                 </TableRow>
               </TableBody>
