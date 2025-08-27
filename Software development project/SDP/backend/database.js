@@ -149,6 +149,7 @@ export async function deleteEquipmentById(id) {
 export async function addEquipment(bodydata) {
   const {
     eq_name,
+    eq_name_eng,
     eq_rental,
     eq_completestock,
     eq_cost,
@@ -169,9 +170,10 @@ export async function addEquipment(bodydata) {
   console.log("Formated string", eq_dofpurchase);
   try {
     await pool.query(
-      "INSERT INTO equipment (eq_name, eq_rental, eq_description, eq_dofpurchase, eq_warranty_expire, eq_cost, eq_completestock, eq_catid) VALUES (?,?,?,?,?,?,?,?)",
+      "INSERT INTO equipment (eq_name, eq_name_eng, eq_rental, eq_description, eq_dofpurchase, eq_warranty_expire, eq_cost, eq_completestock, eq_catid) VALUES (?,?,?,?,?,?,?,?,?)",
       [
         eq_name,
+        eq_name_eng,
         eq_rental,
         eq_description,
         neweq_dofpurchase,

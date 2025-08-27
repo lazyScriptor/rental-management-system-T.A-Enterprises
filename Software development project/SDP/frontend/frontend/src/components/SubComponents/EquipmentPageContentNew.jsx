@@ -93,6 +93,9 @@ function Row(props) {
         <TableCell sx={cellStyles}>
           {highlightText(`${row.eq_name}`, searchValue)}
         </TableCell>
+         <TableCell sx={cellStyles}>
+          {highlightText(`${row.eq_name}`, searchValue)}
+        </TableCell>
         <TableCell sx={cellStyles}>
           {highlightText(`${row.eqcat_name}`, searchValue)}
         </TableCell>
@@ -214,6 +217,7 @@ export default function EquipmentTableNew() {
                 Id {orderBy === "eq_id" && (order === "asc" ? "↑" : "↓")}
               </TableCell>
               <TableCell align="center">Machine Name</TableCell>
+              <TableCell align="center">Machine Name English</TableCell>
               <TableCell align="center">Category Name</TableCell>
               <TableCell
                 align="center"

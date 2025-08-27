@@ -44,14 +44,14 @@ function CompleteInvoiceTable() {
     const categoryId = Number(row.eqcat_id) || 0;
 
     let finalRental = 0;
-    if (specialRental && categoryId == 2) {
+    if (specialRental) {
       if (duration <= dateSet) {
-        finalRental = (duration === 1 ? specialRental : specialRental * 2) * qty;
+        finalRental = specialRental * qty;
       } else {
-        finalRental = normalRental * duration * qty;
+        finalRental =
+          (specialRental + normalRental * (duration - dateSet)) * qty;
+        // console.log("first",normalRental,specialRental,categoryId,dateSet,duration,qty)
       }
-    } else if (specialRental && categoryId != 2) {
-      finalRental = (duration < dateSet ? specialRental * duration : normalRental * duration) * qty;
     } else {
       finalRental = normalRental * duration * qty;
     }
@@ -87,22 +87,26 @@ function CompleteInvoiceTable() {
 
     if (!duration) return normalRental; // show base rate if no duration yet
 
-    if (specialRental && categoryId == 2) {
+    if (specialRental) {
       if (duration <= dateSet) {
-        return duration !== 1 ? [specialRental * 2, ": දින දෙකකට පමණි"] : specialRental;
+        return [specialRental, ": දින 5 "];
       }
-      return normalRental;
-    } else if (specialRental && categoryId != 2) {
-      return duration < dateSet ? specialRental : normalRental;
-    } else {
       return normalRental;
     }
   };
 
   return (
     <Box sx={{ position: "relative", height: "100%", overflowY: "auto" }}>
-      <TableContainer component={Paper} elevation={4} sx={{ borderRadius: 3, overflowY: "auto" }}>
-        <Table sx={{ minWidth: 650, minHeight: "32.2vh" }} stickyHeader aria-label="simple table">
+      <TableContainer
+        component={Paper}
+        elevation={4}
+        sx={{ borderRadius: 3, overflowY: "auto" }}
+      >
+        <Table
+          sx={{ minWidth: 650, minHeight: "32.2vh" }}
+          stickyHeader
+          aria-label="simple table"
+        >
           <TableHead>
             <TableRow>
               <TableCell align="center">තීර අංකය</TableCell>
@@ -135,10 +139,16 @@ function CompleteInvoiceTable() {
                     <TableCell align="center">{index + 1}#</TableCell>
                     <TableCell align="center">{row.eq_id}</TableCell>
                     <TableCell align="center">{row.eq_name}</TableCell>
-                    <TableCell align="center">{rentalDisplayLogic(row)}</TableCell>
+                    <TableCell align="center">
+                      {rentalDisplayLogic(row)}
+                    </TableCell>
                     <TableCell align="center">
                       {notReturned ? (
-                        <FontAwesomeIcon icon={faCircle} beatFade style={{ color: "#FFD43B" }} />
+                        <FontAwesomeIcon
+                          icon={faCircle}
+                          beatFade
+                          style={{ color: "#FFD43B" }}
+                        />
                       ) : (
                         new Date(row.inveq_return_date).toLocaleString()
                       )}
@@ -146,9 +156,14 @@ function CompleteInvoiceTable() {
                     <TableCell align="center">{row.inveq_borrowqty}</TableCell>
                     <TableCell align="center">{row.duration_in_days}</TableCell>
                     <TableCell align="center">
-                      {row.inveq_return_quantity == 0 ? "" : row.inveq_return_quantity}
+                      {row.inveq_return_quantity == 0
+                        ? ""
+                        : row.inveq_return_quantity}
                     </TableCell>
-                    <TableCell align="center" sx={{ backgroundColor: theme.palette.primary[50] }}>
+                    <TableCell
+                      align="center"
+                      sx={{ backgroundColor: theme.palette.primary[50] }}
+                    >
                       {/* Always show bracket for not-returned; do NOT add to totals */}
                       {hasDuration ? `රු. ${totalForRow}` : "රු. 0"}
                       {notReturned && ` (${bracketToday})`}
@@ -162,7 +177,10 @@ function CompleteInvoiceTable() {
               <TableCell colSpan={8} align="right">
                 මුලු අයකිරීම
               </TableCell>
-              <TableCell align="center" sx={{ backgroundColor: theme.palette.primary[200] }}>
+              <TableCell
+                align="center"
+                sx={{ backgroundColor: theme.palette.primary[200] }}
+              >
                 {`රු. ${totalCost}`}
               </TableCell>
             </TableRow>
