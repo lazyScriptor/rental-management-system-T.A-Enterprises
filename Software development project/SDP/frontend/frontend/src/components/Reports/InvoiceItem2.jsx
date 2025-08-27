@@ -413,7 +413,7 @@ function InvoiceItem2() {
       {/* Summary */}
       <Paper sx={{ p: 2, mt: 2 }}>
         <Typography variant="body2">
-          Showing <strong>{Math.min(filtered.length, page * rowsPerPage + 1)}</strong>
+          Showing <strong>{Math.min(filtered.length, page * rowsPerPage + 1)}</strong> 
           –
           <strong>
             {Math.min(filtered.length, (page + 1) * rowsPerPage)}

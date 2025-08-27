@@ -1239,7 +1239,8 @@ export async function getCombinedInvoiceReports(startDate, endDate) {
     i.inv_id AS invoice_id,
     i.inv_createddate,
     i.inv_completed_datetime,
-    (SUM(IFNULL(p.invpay_amount, 0)) + i.inv_advance) AS total_revenue
+    (SUM(IFNULL(p.invpay_amount, 0)) + i.inv_advance) AS total_revenue,
+    i.inv_discount
   FROM 
     invoice i
   LEFT JOIN 
@@ -1279,6 +1280,7 @@ export async function getCombinedInvoiceReports(startDate, endDate) {
         inv_createddate: revItem.inv_createddate,
         inv_completed_datetime: revItem.inv_completed_datetime,
         total_revenue: revItem.total_revenue,
+          discount: revItem.inv_discount ?? 0,
         customer_name: matchingTotalIncome
           ? matchingTotalIncome.customer_name
           : null,
