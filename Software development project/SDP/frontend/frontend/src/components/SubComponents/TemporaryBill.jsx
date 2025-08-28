@@ -41,16 +41,14 @@ const TemporaryBill = () => {
     const categoryId = Number(row.eqcat_id) || 0;
 
     let finalRental = 0;
-    if (specialRental && categoryId == 2) {
+    if (specialRental) {
       if (duration <= dateSet) {
-        if (duration !== 1) finalRental = specialRental * 2 * quantity;
-        if (duration === 1) finalRental = specialRental * 1 * quantity;
+        finalRental = specialRental * quantity;
       } else {
-        finalRental = normalRental * duration * quantity;
+        finalRental =
+          (specialRental + normalRental * (duration - dateSet)) * quantity;
+        // console.log("first",normalRental,specialRental,categoryId,dateSet,duration,qty)
       }
-    } else if (specialRental && categoryId != 2) {
-      if (duration < dateSet) finalRental = specialRental * duration * quantity;
-      else finalRental = normalRental * duration * quantity;
     } else {
       finalRental = normalRental * duration * quantity;
     }
@@ -130,19 +128,18 @@ const TemporaryBill = () => {
     const categoryId = Number(row.eqcat_id) || 0;
 
     let finalRental = 0;
-    if (specialRental && categoryId == 2) {
+    if (specialRental) {
       if (duration <= dateSet) {
-        if (duration !== 1) finalRental = specialRental * 2 * quantity;
-        if (duration === 1) finalRental = specialRental * 1 * quantity;
+        finalRental = specialRental * quantity;
       } else {
-        finalRental = normalRental * duration * quantity;
+        finalRental =
+          (specialRental + normalRental * (duration - dateSet)) * quantity;
+        // console.log("first",normalRental,specialRental,categoryId,dateSet,duration,qty)
       }
-    } else if (specialRental && categoryId != 2) {
-      if (duration < dateSet) finalRental = specialRental * duration * quantity;
-      else finalRental = normalRental * duration * quantity;
     } else {
       finalRental = normalRental * duration * quantity;
     }
+
     return acc + finalRental;
   }, 0);
 
@@ -175,30 +172,49 @@ const TemporaryBill = () => {
         <Paper
           elevation={5}
           sx={{
-            mx: "auto",                // center horizontally (prevents drift)
+            mx: "auto", // center horizontally (prevents drift)
             my: 2,
             width: "100%",
-            maxWidth: BILL_MAX_WIDTH,  // predictable card width
-            boxSizing: "border-box",   // include padding in width
+            maxWidth: BILL_MAX_WIDTH, // predictable card width
+            boxSizing: "border-box", // include padding in width
             px: 3,
             py: 3,
             display: "flex",
             flexDirection: "column",
-            alignItems: "stretch",     // children take full width
+            alignItems: "stretch", // children take full width
           }}
         >
           {/* Header */}
-          <Box sx={{ display: "flex",justifyContent:'center', alignItems: "center", gap: 2, pb: 1 }}>
-            <img style={{ width: 50, height: 50, objectFit: "contain" }} src={logo} alt="" />
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 2,
+              pb: 1,
+            }}
+          >
+            <img
+              style={{ width: 50, height: 50, objectFit: "contain" }}
+              src={logo}
+              alt=""
+            />
             <Typography variant="h5" align="left" sx={{ fontSize: "1rem" }}>
               T.A Enterprises
             </Typography>
           </Box>
 
-          <Typography align="center" variant="caption" sx={{ fontSize: "0.85rem" }}>
+          <Typography
+            align="center"
+            variant="caption"
+            sx={{ fontSize: "0.85rem" }}
+          >
             Temporary Bill for Equipment Rental / Payment / Return
           </Typography>
-          <Typography align="center" sx={{ fontSize: "0.85rem", fontWeight: 600 }}>
+          <Typography
+            align="center"
+            sx={{ fontSize: "0.85rem", fontWeight: 600 }}
+          >
             - TEMPORARY BILL -
           </Typography>
 
@@ -221,8 +237,12 @@ const TemporaryBill = () => {
               Customer Name : {invoiceObject?.customerDetails?.cus_fname}{" "}
               {invoiceObject?.customerDetails?.cus_lname}
             </Typography>
-            <Typography sx={{ fontSize: "0.85rem" }}>Issued By: {cashierName}</Typography>
-            <Typography sx={{ fontSize: "0.85rem" }}>Contact : 0777 593 701</Typography>
+            <Typography sx={{ fontSize: "0.85rem" }}>
+              Issued By: {cashierName}
+            </Typography>
+            <Typography sx={{ fontSize: "0.85rem" }}>
+              Contact : 0777 593 701
+            </Typography>
           </Box>
 
           <Divider sx={{ my: 1.5 }} />
@@ -232,9 +252,15 @@ const TemporaryBill = () => {
             <Box sx={{ width: "100%", mb: 2 }}>
               <Typography
                 align="center"
-                sx={{ fontWeight: 700, color: "red", fontSize: "0.85rem", mb: 1 }}
+                sx={{
+                  fontWeight: 700,
+                  color: "red",
+                  fontSize: "0.85rem",
+                  mb: 1,
+                }}
               >
-                The following items are NOT handed over yet. Cost calculated up to today:
+                The following items are NOT handed over yet. Cost calculated up
+                to today:
               </Typography>
 
               <TableContainer sx={{ width: "100%" }}>
@@ -273,20 +299,24 @@ const TemporaryBill = () => {
                       const total = (() => {
                         const dateSet = Number(row.eqcat_dataset) || 0;
                         const normalRental = Number(row.eq_rental) || 0;
-                        const specialRental = Number(row.spe_singleday_rent) || 0;
+                        const specialRental =
+                          Number(row.spe_singleday_rent) || 0;
                         const quantity = Number(row.inveq_borrowqty) || 0;
                         const categoryId = Number(row.eqcat_id) || 0;
 
                         let finalRental = 0;
                         if (specialRental && categoryId == 2) {
                           if (duration <= dateSet) {
-                            if (duration !== 1) finalRental = specialRental * 2 * quantity;
-                            if (duration === 1) finalRental = specialRental * 1 * quantity;
+                            if (duration !== 1)
+                              finalRental = specialRental * 2 * quantity;
+                            if (duration === 1)
+                              finalRental = specialRental * 1 * quantity;
                           } else {
                             finalRental = normalRental * duration * quantity;
                           }
                         } else if (specialRental && categoryId != 2) {
-                          if (duration < dateSet) finalRental = specialRental * duration * quantity;
+                          if (duration < dateSet)
+                            finalRental = specialRental * duration * quantity;
                           else finalRental = normalRental * duration * quantity;
                         } else {
                           finalRental = normalRental * duration * quantity;
@@ -296,19 +326,34 @@ const TemporaryBill = () => {
 
                       return (
                         <TableRow key={idx}>
-                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                          <TableCell
+                            align="center"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
                             {row.eq_name}
                           </TableCell>
-                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                          <TableCell
+                            align="center"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
                             {row.inveq_borrowqty}
                           </TableCell>
-                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                          <TableCell
+                            align="center"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
                             {duration}
                           </TableCell>
-                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                          <TableCell
+                            align="center"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
                             {rateJSX}
                           </TableCell>
-                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                          <TableCell
+                            align="center"
+                            sx={{ fontSize: "0.75rem" }}
+                          >
                             {total}
                           </TableCell>
                         </TableRow>
@@ -322,7 +367,10 @@ const TemporaryBill = () => {
                       >
                         Total cost for NOT handed over items up to today:
                       </TableCell>
-                      <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                      <TableCell
+                        align="center"
+                        sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                      >
                         {notHandedOverTotal}
                       </TableCell>
                     </TableRow>
@@ -395,7 +443,10 @@ const TemporaryBill = () => {
                   >
                     Equipment Subtotal :
                   </TableCell>
-                  <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                  <TableCell
+                    align="center"
+                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                  >
                     {grandTotal}
                   </TableCell>
                 </TableRow>
@@ -408,7 +459,10 @@ const TemporaryBill = () => {
                     >
                       Discount :
                     </TableCell>
-                    <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                    <TableCell
+                      align="center"
+                      sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                    >
                       -{discount}
                     </TableCell>
                   </TableRow>
@@ -421,7 +475,10 @@ const TemporaryBill = () => {
                   >
                     Net Total :
                   </TableCell>
-                  <TableCell align="center" sx={{ fontSize: "0.8rem", fontWeight: 700 }}>
+                  <TableCell
+                    align="center"
+                    sx={{ fontSize: "0.8rem", fontWeight: 700 }}
+                  >
                     {netTotal}
                   </TableCell>
                 </TableRow>
@@ -477,18 +534,30 @@ const TemporaryBill = () => {
                 ))}
 
                 <TableRow>
-                  <TableCell align="right" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                  <TableCell
+                    align="right"
+                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                  >
                     Total Paid :
                   </TableCell>
-                  <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                  <TableCell
+                    align="center"
+                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                  >
                     {calculateTotalAdvanceAndPayments()}
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell align="right" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                  <TableCell
+                    align="right"
+                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                  >
                     Balance Due :
                   </TableCell>
-                  <TableCell align="center" sx={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                  <TableCell
+                    align="center"
+                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                  >
                     {balanceDue}
                   </TableCell>
                 </TableRow>

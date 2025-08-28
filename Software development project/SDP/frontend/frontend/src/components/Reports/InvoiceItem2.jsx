@@ -55,7 +55,7 @@ function InvoiceItem2() {
   const [sortBy, setSortBy] = useState("inv_createddate");
   const [sortOrder, setSortOrder] = useState("desc"); // asc | desc
 
-  // Fetch once; keep all client-side transforms local (preserves server.js/database.js contract)
+  // Fetch once; keep all client-side transforms local
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -64,7 +64,6 @@ function InvoiceItem2() {
           "http://localhost:8085/reports/getCombinedInvoiceReports"
         );
         if (mounted && res?.data?.status) {
-          // Backend returns: invoice_id, inv_createddate, inv_completed_datetime, total_revenue, customer_name, total_income
           setRaw(Array.isArray(res.data.response) ? res.data.response : []);
         }
       } catch (e) {
@@ -146,9 +145,25 @@ function InvoiceItem2() {
             ? dayjs(row.inv_completed_datetime).valueOf()
             : -Infinity;
         case "total_revenue":
-          return Number(row.total_revenue) || 0; // payments made
+          // payments received
+          return Number(row.total_revenue) || 0;
         case "total_income":
-          return Number(row.total_income) || 0; // invoice total (equipment)
+          // invoice total before discount
+          return Number(row.total_income) || 0;
+        case "discount":
+          return Number(row.discount) || 0;
+        case "final_total": {
+          const income = Number(row.total_income) || 0;
+          const disc = Number(row.discount) || 0;
+          return Math.max(0, income - disc);
+        }
+        case "balance_due": {
+          const income = Number(row.total_income) || 0;
+          const disc = Number(row.discount) || 0;
+          const finalTotal = Math.max(0, income - disc);
+          const paid = Number(row.total_revenue) || 0;
+          return Math.max(0, finalTotal - paid);
+        }
         case "status":
           return row.inv_completed_datetime ? 1 : 0; // 0=incomplete, 1=completed
         default:
@@ -185,15 +200,36 @@ function InvoiceItem2() {
     const totalRows = filtered.length;
     const completedCount = filtered.filter((r) => !!r.inv_completed_datetime).length;
     const incompleteCount = totalRows - completedCount;
-    const sumRevenue = filtered.reduce(
-      (acc, r) => acc + (Number(r.total_revenue) || 0),
-      0
-    );
-    const sumIncome = filtered.reduce(
+
+    const sumIncomeBefore = filtered.reduce(
       (acc, r) => acc + (Number(r.total_income) || 0),
       0
     );
-    return { totalRows, completedCount, incompleteCount, sumRevenue, sumIncome };
+    const sumDiscounts = filtered.reduce(
+      (acc, r) => acc + (Number(r.discount) || 0),
+      0
+    );
+    const sumFinal = filtered.reduce((acc, r) => {
+      const income = Number(r.total_income) || 0;
+      const disc = Number(r.discount) || 0;
+      return acc + Math.max(0, income - disc);
+    }, 0);
+    const sumPayments = filtered.reduce(
+      (acc, r) => acc + (Number(r.total_revenue) || 0),
+      0
+    );
+    const sumBalance = Math.max(0, sumFinal - sumPayments);
+
+    return {
+      totalRows,
+      completedCount,
+      incompleteCount,
+      sumIncomeBefore,
+      sumDiscounts,
+      sumFinal,
+      sumPayments,
+      sumBalance,
+    };
   }, [filtered]);
 
   return (
@@ -217,6 +253,8 @@ function InvoiceItem2() {
             onChange={setStartDate}
             slotProps={{ textField: { size: "small" } }}
           />
+        </LocalizationProvider>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
           <DateTimePicker
             label="End Date & Time"
             value={endDate}
@@ -254,7 +292,7 @@ function InvoiceItem2() {
           </Select>
         </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 200 }}>
+        <FormControl size="small" sx={{ minWidth: 220 }}>
           <InputLabel id="sort-by-label">Sort By</InputLabel>
           <Select
             labelId="sort-by-label"
@@ -265,8 +303,11 @@ function InvoiceItem2() {
             <MenuItem value="status">Status (Completed/Incomplete)</MenuItem>
             <MenuItem value="inv_createddate">Created Date</MenuItem>
             <MenuItem value="inv_completed_datetime">Completed Date</MenuItem>
-            <MenuItem value="total_revenue">Total Payments (LKR)</MenuItem>
+            <MenuItem value="total_revenue">Payments Received (LKR)</MenuItem>
             <MenuItem value="total_income">Invoice Total (LKR)</MenuItem>
+            <MenuItem value="discount">Discount (LKR)</MenuItem>
+            <MenuItem value="final_total">Final Total (LKR)</MenuItem>
+            <MenuItem value="balance_due">Balance Due (LKR)</MenuItem>
             <MenuItem value="invoice_id">Invoice ID</MenuItem>
             <MenuItem value="customer_name">Customer Name</MenuItem>
           </Select>
@@ -332,7 +373,7 @@ function InvoiceItem2() {
                   direction={sortOrder}
                   onClick={() => handleRequestSort("total_revenue")}
                 >
-                  Total Payments Done (LKR)
+                  Payments Received (LKR)
                 </TableSortLabel>
               </TableCell>
               <TableCell align="center">
@@ -341,7 +382,34 @@ function InvoiceItem2() {
                   direction={sortOrder}
                   onClick={() => handleRequestSort("total_income")}
                 >
-                  Invoice Total Amount (LKR)
+                  Invoice Total (LKR)
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="center">
+                <TableSortLabel
+                  active={sortBy === "discount"}
+                  direction={sortOrder}
+                  onClick={() => handleRequestSort("discount")}
+                >
+                  Discount (LKR)
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="center">
+                <TableSortLabel
+                  active={sortBy === "final_total"}
+                  direction={sortOrder}
+                  onClick={() => handleRequestSort("final_total")}
+                >
+                  Final Total (LKR)
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="center">
+                <TableSortLabel
+                  active={sortBy === "balance_due"}
+                  direction={sortOrder}
+                  onClick={() => handleRequestSort("balance_due")}
+                >
+                  Balance Due (LKR)
                 </TableSortLabel>
               </TableCell>
               <TableCell align="center">
@@ -355,9 +423,18 @@ function InvoiceItem2() {
               </TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
             {paged.map((row) => {
               const isCompleted = !!row.inv_completed_datetime;
+
+              // Row-level derived values
+              const income = Number(row.total_income || 0);
+              const discount = Number(row.discount || 0);
+              const finalTotal = Math.max(0, income - discount);
+              const paid = Number(row.total_revenue || 0);
+              const balanceDue = Math.max(0, finalTotal - paid);
+
               const statusChip = (
                 <Chip
                   size="small"
@@ -366,6 +443,7 @@ function InvoiceItem2() {
                   variant="outlined"
                 />
               );
+
               return (
                 <TableRow
                   key={`${row.invoice_id}-${row.inv_createddate}`}
@@ -380,10 +458,19 @@ function InvoiceItem2() {
                     {dayjs(row.inv_createddate).format("YYYY-MM-DD HH:mm:ss")}
                   </TableCell>
                   <TableCell align="center">
-                    {fmtLKR.format(Number(row.total_revenue || 0))}
+                    {fmtLKR.format(paid)}
                   </TableCell>
                   <TableCell align="center">
-                    {fmtLKR.format(Number(row.total_income || 0))}
+                    {fmtLKR.format(income)}
+                  </TableCell>
+                  <TableCell align="center">
+                    {fmtLKR.format(discount)}
+                  </TableCell>
+                  <TableCell align="center">
+                    {fmtLKR.format(finalTotal)}
+                  </TableCell>
+                  <TableCell align="center">
+                    {fmtLKR.format(balanceDue)}
                   </TableCell>
                   <TableCell align="center">
                     {row.inv_completed_datetime
@@ -413,21 +500,33 @@ function InvoiceItem2() {
       {/* Summary */}
       <Paper sx={{ p: 2, mt: 2 }}>
         <Typography variant="body2">
-          Showing <strong>{Math.min(filtered.length, page * rowsPerPage + 1)}</strong> 
+          Showing <strong>{Math.min(filtered.length, page * rowsPerPage + 1)}</strong>
           –
-          <strong>
-            {Math.min(filtered.length, (page + 1) * rowsPerPage)}
-          </strong>{" "}
+          <strong>{Math.min(filtered.length, (page + 1) * rowsPerPage)}</strong>{" "}
           of <strong>{filtered.length}</strong> invoices
         </Typography>
         <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Completed: <strong>{summary.completedCount}</strong> • Incomplete: <strong>{summary.incompleteCount}</strong>
+          Completed: <strong>{summary.completedCount}</strong> • Incomplete:{" "}
+          <strong>{summary.incompleteCount}</strong>
         </Typography>
         <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Total Payments (filtered): <strong>{fmtLKR.format(summary.sumRevenue)}</strong>
+          Invoice Totals (before discount):{" "}
+          <strong>{fmtLKR.format(summary.sumIncomeBefore)}</strong>
         </Typography>
         <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Invoice Totals (filtered): <strong>{fmtLKR.format(summary.sumIncome)}</strong>
+          Discounts (filtered):{" "}
+          <strong>{fmtLKR.format(summary.sumDiscounts)}</strong>
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 0.5 }}>
+          Final Invoice Totals:{" "}
+          <strong>{fmtLKR.format(summary.sumFinal)}</strong>
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 0.5 }}>
+          Payments Received:{" "}
+          <strong>{fmtLKR.format(summary.sumPayments)}</strong>
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 0.5 }}>
+          Balance Due: <strong>{fmtLKR.format(summary.sumBalance)}</strong>
         </Typography>
       </Paper>
     </Box>

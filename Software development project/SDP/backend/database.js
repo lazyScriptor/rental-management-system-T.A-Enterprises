@@ -1253,23 +1253,41 @@ export async function getCombinedInvoiceReports(startDate, endDate) {
     i.inv_id;
 `);
     const [totalIncome] = await pool.query(`
-      SELECT 
-        i.inv_id AS invoice_id,
-        CONCAT(c.cus_fname, ' ', c.cus_lname) AS customer_name,
-        SUM((ie.duration_in_days * ie.inveq_borrowqty * e.eq_rental)) AS total_income ,i.inv_completed_datetime
-      FROM 
-        invoice i
-      JOIN 
-        customer c ON i.inv_cusid = c.cus_id
-      JOIN 
-        invoiceEquipment ie ON ie.inveq_invid = i.inv_id
-      JOIN 
-        equipment e ON ie.inveq_eqid = e.eq_id
-      WHERE 
-        (ie.inveq_return_date IS NOT NULL OR ie.inveq_borrow_date IS NOT NULL)
-        AND i.inv_delete_status = 0
-      GROUP BY 
-        i.inv_id, c.cus_id;
+SELECT 
+  i.inv_id AS invoice_id,
+  CONCAT(c.cus_fname, ' ', c.cus_lname) AS customer_name,
+  SUM(
+    CASE 
+      WHEN se.spe_singleday_rent IS NOT NULL AND ec.eqcat_dateset IS NOT NULL THEN
+        CASE 
+          WHEN COALESCE(ie.duration_in_days, 1) <= ec.eqcat_dateset 
+            THEN se.spe_singleday_rent * ie.inveq_borrowqty
+          ELSE (se.spe_singleday_rent + (e.eq_rental * (COALESCE(ie.duration_in_days, 1) - ec.eqcat_dateset))) * ie.inveq_borrowqty
+        END
+      WHEN se.spe_singleday_rent IS NOT NULL AND (ec.eqcat_dateset IS NULL OR ec.eqcat_dateset = 0) THEN
+        se.spe_singleday_rent * ie.inveq_borrowqty
+      ELSE 
+        (e.eq_rental * COALESCE(ie.duration_in_days, 1) * ie.inveq_borrowqty)
+    END
+  ) AS total_income,
+  i.inv_completed_datetime
+FROM 
+  invoice i
+JOIN 
+  customer c ON i.inv_cusid = c.cus_id
+JOIN 
+  invoiceEquipment ie ON ie.inveq_invid = i.inv_id
+JOIN 
+  equipment e ON ie.inveq_eqid = e.eq_id
+LEFT JOIN 
+  equipmentCategory ec ON e.eq_catid = ec.eqcat_id
+LEFT JOIN 
+  specialEquipment se ON e.eq_id = se.spe_eqid
+WHERE 
+  (ie.inveq_return_date IS NOT NULL OR ie.inveq_borrow_date IS NOT NULL)
+  AND i.inv_delete_status = 0
+GROUP BY 
+  i.inv_id, c.cus_id, c.cus_fname, c.cus_lname, i.inv_completed_datetime;
     `);
 
     // Combine the results based on the common column `invoice_id`
