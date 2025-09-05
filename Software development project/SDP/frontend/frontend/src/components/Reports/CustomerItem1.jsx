@@ -38,6 +38,7 @@ export function Item1() {
         if (response.data.status === false) {
           console.log("Failed to retrieve rating information");
         } else {
+          console.log(response.data.response);
           setCustomerRatings(response.data.response);
         }
       } catch (error) {

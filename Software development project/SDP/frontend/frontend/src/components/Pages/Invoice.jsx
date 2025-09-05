@@ -394,7 +394,12 @@ function Invoice() {
               ""
             )}
           </Box>
-          <Box
+         <Box
+            component="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleInvoiceSearch(invoiceIdSearch);
+            }}
             sx={{
               display: "flex",
               justifyContent: "center",
@@ -406,13 +411,14 @@ function Invoice() {
             }}
           >
             <TextField
+              value={invoiceIdSearch}
               onChange={(e) => setInvoiceIdSearch(e.target.value)}
               sx={[{ width: "350px" }, textFieldStyle]}
               id="outlined-basic"
               label="Search with invoice Id"
               variant="outlined"
             />
-            <Button onClick={() => handleInvoiceSearch(invoiceIdSearch)}>
+            <Button type="submit">
               <YoutubeSearchedForIcon />
             </Button>
           </Box>
@@ -517,26 +523,34 @@ function Invoice() {
                     borderRadius: 5,
                   }}
                 >
-                  <TextField
-                    onChange={(e) => {
-                      setPhoneNumberorNic(e.target.value);
-                      setValidationMessage("");
+                  <Box
+                    component="form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSearchPhoneNumberorNic();
                     }}
-                    value={phoneNumberorNic}
-                    disabled={updateBtnStatus}
-                    sx={[{ width: "350px" }, textFieldStyle]}
-                    id="outlined-basic"
-                    label="Search with phone number or NIC"
-                    variant="outlined"
-                    error={!!validationMessage}
-                    helperText={validationMessage}
-                  />
-                  <Button
-                    sx={{ height: "35px" }}
-                    onClick={handleSearchPhoneNumberorNic}
+                    sx={{ display: "flex", alignItems: "center", gap: 1 }}
                   >
-                    <FontAwesomeIcon icon={faSearch} />
-                  </Button>
+                    <TextField
+                      onChange={(e) => {
+                        setPhoneNumberorNic(e.target.value);
+                        setValidationMessage("");
+                      }}
+                      value={phoneNumberorNic}
+                      disabled={updateBtnStatus}
+                      sx={[{ width: "350px" }, textFieldStyle]}
+                      id="outlined-basic"
+                      label="Search with phone number or NIC"
+                      variant="outlined"
+                      error={!!validationMessage}
+                      helperText={validationMessage}
+                    />
+                    <Button sx={{ height: "35px" }} type="submit">
+                      <FontAwesomeIcon icon={faSearch} />
+                    </Button>
+                  </Box>
+
+                  
                   <Button
                     onClick={() => {
                       setData(clearData);

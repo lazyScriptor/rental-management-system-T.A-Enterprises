@@ -960,26 +960,69 @@ export async function updateUserRole(userId, role, password) {
 }
 export async function reportsGetCustomerRatings() {
   try {
-    const [response] = await pool.query(`SELECT 
-      customer.cus_fname,
-      customer.cus_lname,
-      customer.cus_phone_number,
-      customer.cus_delete_status,
-      COUNT(DISTINCT invoice.inv_id) AS number_of_invoices,
-      GROUP_CONCAT(DISTINCT invoice.inv_id) AS invoice_ids,
-      SUM(equipment.eq_rental * invoiceEquipment.duration_in_days * invoiceEquipment.inveq_borrowqty) AS total_sales
-    FROM 
-      customer
-    JOIN 
-      invoice ON invoice.inv_cusid = customer.cus_id
-    JOIN 
-      invoiceEquipment ON invoiceEquipment.inveq_invid = invoice.inv_id
-    JOIN 
-      equipment ON equipment.eq_id = invoiceEquipment.inveq_eqid
-    WHERE 
-      invoiceEquipment.duration_in_days IS NOT NULL
-    GROUP BY 
-      customer.cus_id;
+    const [response] = await pool.query(`
+      SELECT
+        c.cus_fname,
+        c.cus_lname,
+        c.cus_phone_number,
+        c.cus_delete_status,
+        COUNT(DISTINCT it.inv_id) AS number_of_invoices,
+        GROUP_CONCAT(DISTINCT it.inv_id ORDER BY it.inv_id) AS invoice_ids,
+        -- Optional: totals before/after discount for visibility
+        ROUND(SUM(it.total_before_discount), 2) AS total_sales_before_discount,
+        ROUND(SUM(it.total_discount), 2)        AS total_discounts,
+        ROUND(SUM(it.final_total), 2)           AS total_sales  -- <- this is the FINAL number you use in UI
+      FROM customer c
+      JOIN (
+        /* Per-invoice totals so discounts are subtracted ONCE per invoice */
+        SELECT
+          i.inv_id,
+          i.inv_cusid,
+          COALESCE(i.inv_discount, 0) AS total_discount,
+          /* Invoice total BEFORE discount, using business rules */
+          SUM(
+            CASE
+              WHEN se.spe_singleday_rent IS NOT NULL AND ec.eqcat_dateset IS NOT NULL THEN
+                CASE
+                  WHEN COALESCE(ie.duration_in_days, 1) <= ec.eqcat_dateset
+                    THEN se.spe_singleday_rent * ie.inveq_borrowqty
+                  ELSE (se.spe_singleday_rent + (e.eq_rental * (COALESCE(ie.duration_in_days, 1) - ec.eqcat_dateset))) * ie.inveq_borrowqty
+                END
+              WHEN se.spe_singleday_rent IS NOT NULL AND (ec.eqcat_dateset IS NULL OR ec.eqcat_dateset = 0) THEN
+                se.spe_singleday_rent * ie.inveq_borrowqty
+              ELSE
+                (e.eq_rental * COALESCE(ie.duration_in_days, 1) * ie.inveq_borrowqty)
+            END
+          ) AS total_before_discount,
+          /* Final invoice total AFTER discount */
+          (
+            SUM(
+              CASE
+                WHEN se.spe_singleday_rent IS NOT NULL AND ec.eqcat_dateset IS NOT NULL THEN
+                  CASE
+                    WHEN COALESCE(ie.duration_in_days, 1) <= ec.eqcat_dateset
+                      THEN se.spe_singleday_rent * ie.inveq_borrowqty
+                    ELSE (se.spe_singleday_rent + (e.eq_rental * (COALESCE(ie.duration_in_days, 1) - ec.eqcat_dateset))) * ie.inveq_borrowqty
+                  END
+                WHEN se.spe_singleday_rent IS NOT NULL AND (ec.eqcat_dateset IS NULL OR ec.eqcat_dateset = 0) THEN
+                  se.spe_singleday_rent * ie.inveq_borrowqty
+                ELSE
+                  (e.eq_rental * COALESCE(ie.duration_in_days, 1) * ie.inveq_borrowqty)
+              END
+            ) - COALESCE(i.inv_discount, 0)
+          ) AS final_total
+        FROM invoice i
+        JOIN invoiceEquipment ie ON ie.inveq_invid = i.inv_id
+        JOIN equipment e         ON e.eq_id       = ie.inveq_eqid
+        LEFT JOIN equipmentCategory ec ON e.eq_catid = ec.eqcat_id
+        LEFT JOIN specialEquipment  se ON e.eq_id   = se.spe_eqid
+        WHERE i.inv_delete_status = 0
+          AND (ie.inveq_return_date IS NOT NULL OR ie.inveq_borrow_date IS NOT NULL)
+          AND ie.duration_in_days IS NOT NULL
+        GROUP BY i.inv_id, i.inv_cusid, i.inv_discount
+      ) it ON it.inv_cusid = c.cus_id
+      GROUP BY c.cus_id, c.cus_fname, c.cus_lname, c.cus_phone_number, c.cus_delete_status
+      ORDER BY c.cus_fname, c.cus_lname;
     `);
     return response;
   } catch (error) {

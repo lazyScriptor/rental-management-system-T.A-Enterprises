@@ -59,6 +59,22 @@ function InvoiceHandOverForm() {
     clearObject,
   } = useContext(InvoiceContext);
 
+  // Determine if all equipments on this invoice have been handed over
+  const allHandedOver = React.useMemo(() => {
+    const list = invoiceObject?.eqdetails || [];
+    if (!Array.isArray(list) || list.length === 0) return false;
+    return list.every(
+      (item) => Number(item?.inveq_return_quantity || 0) > 0 || item?.inveq_return_date != null
+    );
+  }, [invoiceObject]);
+
+  // Propagate this state to any outer consumers (optional)
+  useEffect(() => {
+    if (typeof setButtonDisable === "function") {
+      setButtonDisable(allHandedOver);
+    }
+  }, [allHandedOver, setButtonDisable]);
+
   const handleIdChange = (e) => {
     const { name, value } = e.target;
     setIdFormData({
@@ -87,6 +103,7 @@ function InvoiceHandOverForm() {
 
   const handleSubmitId = (e) => {
     e.preventDefault();
+    if (allHandedOver) return; // Do nothing if everything is already handed over
     setEqErrors({});
     const validationErrors = {};
 
@@ -146,6 +163,7 @@ function InvoiceHandOverForm() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (allHandedOver) return; // Do nothing if everything is already handed over
     const validationErrors = validateForm();
     setEqErrors(validationErrors);
 
@@ -203,6 +221,23 @@ function InvoiceHandOverForm() {
       <form noValidate onSubmit={handleSubmitId}>
         <Typography>Equipment Form</Typography>
         <hr />
+        {allHandedOver && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              mb: 2,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: (theme) => theme.palette.success.light,
+              color: (theme) => theme.palette.success.contrastText || theme.palette.success.dark,
+            }}
+          >
+            <InfoOutlinedIcon fontSize="small" />
+            <Typography variant="body2">All the equipments are handed over.</Typography>
+          </Box>
+        )}
 
         <Box sx={{ display: "flex", height: "80px" }}>
           <FormLabel
@@ -229,6 +264,7 @@ function InvoiceHandOverForm() {
           <Button
             sx={{ width: "20px", height: "57px" }}
             type="submit"
+            disabled={buttonDesable || allHandedOver}
             onClick={() => {
               setEqName("");
               setEqQuantity("");
@@ -307,7 +343,7 @@ function InvoiceHandOverForm() {
             sx={{ display: "flex", justifyContent: "space-evenly", pt: "45px" }}
           >
             <Button
-              disabled={buttonDesable}
+              disabled={buttonDesable || allHandedOver}
               sx={{ mt: 2.5 }}
               variant="contained"
               color="warning"
@@ -318,7 +354,7 @@ function InvoiceHandOverForm() {
               Handover
             </Button>
             <Button
-              disabled={buttonDesable}
+              disabled={buttonDesable || allHandedOver}
               sx={{ mt: 2.5 }}
               variant="contained"
               color="error"
