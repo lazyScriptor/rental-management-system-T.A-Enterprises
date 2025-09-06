@@ -513,7 +513,7 @@ export function CustomerPageUpper(props) {
           </Box>
           <Box display="flex" justifyContent="flex-start">
             <Box>
-              <CustomerPageMiddle />
+              {/* <CustomerPageMiddle /> */}
             </Box>
           </Box>
         </Stack>

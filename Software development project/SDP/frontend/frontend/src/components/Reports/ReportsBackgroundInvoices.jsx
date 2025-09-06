@@ -50,14 +50,14 @@ function ReportsBackgroundInvoices() {
       <Box id="main-body">
         <Box id="body" sx={{ display: "flex", flexDirection: "column" }}>
           <Box component={Paper} sx={{ width: "100%", height: "auto" }}>
-            <Box sx={{ height: "20vh" }}></Box>
+
             <Box sx={{ height: "10vh", display: "flex", width: "100%" }}>
               <ReportsNavBar />
             </Box>
             <Box
               sx={{
                 height: "auto",
-                minHeight: "70vh",
+                minHeight: "90vh",
                 display: "flex",
                 backgroundColor: "#f2f4f7",
                 p: 2,

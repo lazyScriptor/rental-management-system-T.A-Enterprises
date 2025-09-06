@@ -16,7 +16,7 @@ import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
 import { InvoicePdfWarehouseHandler } from "../../RoleBasedAccess/Warehouse handler/Invoice/InvoiceWarehouseHandler";
 import TemporaryBill from "../../SubComponents/TemporaryBill";
 import ReceiptIcon from "@mui/icons-material/Receipt";
-
+import LibraryAddCheckIcon from "@mui/icons-material/LibraryAddCheck";
 function InvoiceDetailsWindowDown(props) {
   const [openDialog, setOpenDialog] = useState(false);
   const [openOtherDialog, setOpenOtherDialog] = useState(false);
@@ -26,7 +26,9 @@ function InvoiceDetailsWindowDown(props) {
   const [netPayable, setNetPayable] = useState(0);
 
   const toNumber = (v) =>
-    v === undefined || v === null || v === "" || isNaN(Number(v)) ? 0 : Number(v);
+    v === undefined || v === null || v === "" || isNaN(Number(v))
+      ? 0
+      : Number(v);
   const fmtLKR = (n) => `${toNumber(n).toLocaleString("en-LK")} LKR`;
 
   const handlePdfButtonClick = () => {
@@ -109,9 +111,7 @@ function InvoiceDetailsWindowDown(props) {
       });
     } else {
       setDiscountInput(v);
-      setNetPayable(
-        Math.max(0, toNumber(machineTotalCost) - advAndPays - v)
-      );
+      setNetPayable(Math.max(0, toNumber(machineTotalCost) - advAndPays - v));
     }
   };
 
@@ -540,6 +540,7 @@ function InvoiceDetailsWindowDown(props) {
 
       <Box display={"flex"} alignItems={"center"} gap={1}>
         {invoiceSearchBtnStatus == true ? (
+          <>
           <Button
             disabled={buttonDesable}
             fullWidth
@@ -549,40 +550,44 @@ function InvoiceDetailsWindowDown(props) {
           >
             Update Invoice
           </Button>
+           
+            <Button
+              onClick={handleOtherDialogButtonClick}
+              variant="outlined"
+              sx={{ height: "60px", width: "20px", mt: 1 }}
+            >
+              <ReceiptIcon />
+            </Button>
+
+            <Button
+              color="success"
+              onClick={handleCompletedButtonClick}
+              disabled={buttonDesable}
+              variant="outlined"
+              sx={{ height: "60px", width: "20px", mt: 1 }}
+            >
+              <LibraryAddCheckIcon />
+            </Button>
+          </>
         ) : (
-          <Button
-            color="success"
-            variant="contained"
-            sx={{ mt: 1, borderRadius: 0, height: "60px", width: "13vw" }}
-            onClick={handleInvoiceSubmit}
-          >
-            Create Invoice
-          </Button>
+          <>
+           <Button
+              color="success"
+              variant="contained"
+              sx={{ mt: 1, borderRadius: 0, height: "60px", width: "100%" }}
+              onClick={handleInvoiceSubmit}
+            >
+              Create Invoice
+            </Button>
+          </>
         )}
-        <Button
+        {/* <Button
           onClick={handlePdfButtonClick}
           variant="contained"
           sx={{ height: "60px", width: "20px", mt: 1 }}
         >
           <PictureAsPdfRoundedIcon sx={{ color: "white" }} />
-        </Button>
-        <Button
-          onClick={handleOtherDialogButtonClick}
-          variant="outlined"
-          sx={{ height: "60px", width: "20px", mt: 1 }}
-        >
-          <ReceiptIcon />
-        </Button>
-
-        <Button
-          color="success"
-          onClick={handleCompletedButtonClick}
-          disabled={buttonDesable}
-          variant="outlined"
-          sx={{ height: "60px", width: "20px", mt: 1 }}
-        >
-          O
-        </Button>
+        </Button> */}
       </Box>
 
       <Dialog

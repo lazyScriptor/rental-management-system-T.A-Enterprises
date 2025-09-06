@@ -64,7 +64,9 @@ function InvoiceHandOverForm() {
     const list = invoiceObject?.eqdetails || [];
     if (!Array.isArray(list) || list.length === 0) return false;
     return list.every(
-      (item) => Number(item?.inveq_return_quantity || 0) > 0 || item?.inveq_return_date != null
+      (item) =>
+        Number(item?.inveq_return_quantity || 0) > 0 ||
+        item?.inveq_return_date != null
     );
   }, [invoiceObject]);
 
@@ -231,76 +233,18 @@ function InvoiceHandOverForm() {
               p: 1.5,
               borderRadius: 2,
               bgcolor: (theme) => theme.palette.success.light,
-              color: (theme) => theme.palette.success.contrastText || theme.palette.success.dark,
+              color: (theme) =>
+                theme.palette.success.contrastText ||
+                theme.palette.success.dark,
             }}
           >
             <InfoOutlinedIcon fontSize="small" />
-            <Typography variant="body2">All the equipments are handed over.</Typography>
+            <Typography variant="body2">
+              All the equipments are handed over.
+            </Typography>
           </Box>
         )}
-
-        <Box sx={{ display: "flex", height: "80px" }}>
-          <FormLabel
-            sx={{
-              pt: 2,
-              pr: 2,
-              width: "15%",
-              display: "flex",
-              justifyContent: "end",
-            }}
-            htmlFor="id"
-          >
-            ID
-          </FormLabel>
-          <TextField
-            id="id"
-            label="ID"
-            name="id"
-            type="text"
-            onChange={handleIdChange}
-            error={!!idErrors.id}
-            helperText={idErrors.id && idErrors.id}
-          />
-          <Button
-            sx={{ width: "20px", height: "57px" }}
-            type="submit"
-            disabled={buttonDesable || allHandedOver}
-            onClick={() => {
-              setEqName("");
-              setEqQuantity("");
-            }}
-          >
-            <YoutubeSearchedForIcon />
-          </Button>
-        </Box>
-      </form>
-
-      <form noValidate onSubmit={handleSubmit}>
-        <Stack spacing={2} marginTop={2}>
-          <Box sx={{ display: "flex", height: "80px" }}>
-            <FormLabel
-              sx={{
-                pt: 2,
-                pr: 2,
-                width: "17%",
-                display: "flex",
-                justifyContent: "end",
-              }}
-              htmlFor="name"
-            >
-              Name
-            </FormLabel>
-            <TextField
-              disabled={true}
-              fullWidth
-              id="name"
-              label={eqName || "Name"}
-              name="name"
-              type="text"
-              value={eqName}
-              onChange={handleChange}
-            />
-          </Box>
+        {!allHandedOver && (
           <Box sx={{ display: "flex", height: "80px" }}>
             <FormLabel
               sx={{
@@ -310,62 +254,131 @@ function InvoiceHandOverForm() {
                 display: "flex",
                 justifyContent: "end",
               }}
-              htmlFor="quantity"
+              htmlFor="id"
             >
-              Quantity
+              ID
             </FormLabel>
             <TextField
-              fullWidth
-              disabled={addButtonDisable}
-              id="quantity"
-              label={["remaining : ", eqQuantity || "No equipment found"]}
-              name="quantity"
-              type="number"
-              onChange={handleChange}
-              error={!!eqErrors.quantity}
-              helperText={eqErrors.quantity && eqErrors.quantity}
+              id="id"
+              label="ID"
+              name="id"
+              disabled={allHandedOver}
+              type="text"
+              onChange={handleIdChange}
+              error={!!idErrors.id}
+              helperText={idErrors.id && idErrors.id}
             />
-          </Box>
-          <Typography
-            sx={{
-              backgroundColor: (theme) => theme.palette.primary[50],
-              p: 1.3,
-              width: "180px",
-              borderRadius: 3,
-            }}
-            variant="body2"
-            color={stockTextColor}
-            textAlign={"left"}
-          >
-            Rem Borrowed Stock: {eqQuantity}
-          </Typography>
-          <Box
-            sx={{ display: "flex", justifyContent: "space-evenly", pt: "45px" }}
-          >
             <Button
-              disabled={buttonDesable || allHandedOver}
-              sx={{ mt: 2.5 }}
-              variant="contained"
-              color="warning"
-              customvariant="custom"
-              //   onClick={handleHandover}
+              sx={{ width: "20px", height: "57px" }}
               type="submit"
-            >
-              Handover
-            </Button>
-            <Button
               disabled={buttonDesable || allHandedOver}
-              sx={{ mt: 2.5 }}
-              variant="contained"
-              color="error"
-              customvariant="custom"
-              onClick={handleReset}
+              onClick={() => {
+                setEqName("");
+                setEqQuantity("");
+              }}
             >
-              Clear
+              <YoutubeSearchedForIcon />
             </Button>
           </Box>
-        </Stack>
+        )}
       </form>
+      {!allHandedOver && (
+        <form noValidate onSubmit={handleSubmit}>
+          <Stack spacing={2} marginTop={2}>
+            <Box sx={{ display: "flex", height: "80px" }}>
+              <FormLabel
+                sx={{
+                  pt: 2,
+                  pr: 2,
+                  width: "17%",
+                  display: "flex",
+                  justifyContent: "end",
+                }}
+                htmlFor="name"
+              >
+                Name
+              </FormLabel>
+              <TextField
+                disabled={true}
+                fullWidth
+                id="name"
+                label={eqName || "Name"}
+                name="name"
+                type="text"
+                value={eqName}
+                onChange={handleChange}
+              />
+            </Box>
+            <Box sx={{ display: "flex", height: "80px" }}>
+              <FormLabel
+                sx={{
+                  pt: 2,
+                  pr: 2,
+                  width: "15%",
+                  display: "flex",
+                  justifyContent: "end",
+                }}
+                htmlFor="quantity"
+              >
+                Quantity
+              </FormLabel>
+              <TextField
+                fullWidth
+                disabled={addButtonDisable || !eqName || allHandedOver}
+                id="quantity"
+                label={["remaining : ", eqQuantity || "No equipment found"]}
+                name="quantity"
+                type="number"
+                onChange={handleChange}
+                error={!!eqErrors.quantity}
+                helperText={eqErrors.quantity && eqErrors.quantity}
+              />
+            </Box>
+            <Typography
+              sx={{
+                backgroundColor: (theme) => theme.palette.primary[50],
+                p: 1.3,
+                width: "180px",
+                borderRadius: 3,
+              }}
+              variant="body2"
+              color={stockTextColor}
+              textAlign={"left"}
+            >
+              Rem Borrowed Stock: {eqQuantity}
+            </Typography>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-evenly",
+                pt: "45px",
+              }}
+            >
+              <Button
+                disabled={buttonDesable || allHandedOver}
+                sx={{ mt: 2.5 }}
+                variant="contained"
+                color="warning"
+                customvariant="custom"
+                //   onClick={handleHandover}
+                type="submit"
+              >
+                Handover
+              </Button>
+              <Button
+                disabled={buttonDesable || allHandedOver}
+                sx={{ mt: 2.5 }}
+                variant="contained"
+                color="error"
+                customvariant="custom"
+                onClick={handleReset}
+              >
+                Clear
+              </Button>
+            </Box>
+          </Stack>
+        </form>
+      )}
     </Paper>
   );
 }

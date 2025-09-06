@@ -8,6 +8,7 @@ import {
   Fab,
   FormLabel,
   Paper,
+  Stack,
   TextField,
   Typography,
 } from "@mui/material";
@@ -42,6 +43,7 @@ import AddIcCallOutlinedIcon from "@mui/icons-material/AddIcCallOutlined";
 import ContactMailOutlinedIcon from "@mui/icons-material/ContactMailOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import { InvoicePdfWarehouseHandler } from "../RoleBasedAccess/Warehouse handler/Invoice/InvoiceWarehouseHandler.jsx";
+import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
@@ -82,7 +84,8 @@ function Invoice() {
   const { setIsAuthenticated } = useContext(AuthContext);
 
   // PopupContext handlers for payments dialog
-  const { boolvalue, setBoolvalue, userData, setUserData } = useContext(PopupContext);
+  const { boolvalue, setBoolvalue, userData, setUserData } =
+    useContext(PopupContext);
 
   const [phoneNumberorNic, setPhoneNumberorNic] = useState("");
   const [invoiceId, setInvoiceId] = useState("0000");
@@ -387,14 +390,16 @@ function Invoice() {
               <>
                 <Typography> Completed Date and Time </Typography>
                 <Typography>
-                  {new Date(invoiceObject.inv_completed_datetime).toLocaleString()}
+                  {new Date(
+                    invoiceObject.inv_completed_datetime
+                  ).toLocaleString()}
                 </Typography>
               </>
             ) : (
               ""
             )}
           </Box>
-         <Box
+          <Box
             component="form"
             onSubmit={(e) => {
               e.preventDefault();
@@ -444,6 +449,11 @@ function Invoice() {
             </Box>
           </Box>
         </Box>
+
+
+
+
+
 
         <Box
           sx={{
@@ -545,13 +555,17 @@ function Invoice() {
                       error={!!validationMessage}
                       helperText={validationMessage}
                     />
-                    <Button sx={{ height: "35px" }} type="submit">
+                    <Button
+                      sx={{ height: "35px" }}
+                      type="submit"
+                      disabled={updateBtnStatus}
+                    >
                       <FontAwesomeIcon icon={faSearch} />
                     </Button>
                   </Box>
 
-                  
                   <Button
+                    disabled={updateBtnStatus}
                     onClick={() => {
                       setData(clearData);
                       setPhoneNumberorNic("");
@@ -567,23 +581,24 @@ function Invoice() {
                     <BackspaceOutlinedIcon />
                   </Button>
                   <Box flexGrow={1} />
-                  <TextField
-                    disabled
-                    sx={[
-                      textFieldStyle,
-                      {
-                        "& input": {
-                          color: numberOfInvoices > 5 ? "#006400" : "#000000",
-                        },
-                        width: 120,
-                      },
-                    ]}
-                    value={
-                      numberOfInvoices !== undefined
-                        ? `No: ${numberOfInvoices}`
-                        : ""
-                    }
-                  />
+
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={0.5}
+                    sx={{
+                      width: 120,
+                      color: numberOfInvoices > 5 ? "#006400" : "#717171ff",
+                    }}
+                  >
+                    <InsertDriveFileIcon
+                      fontSize="small"
+                      sx={{ mr: 0.5, mb: "2px" }}
+                    />
+                    <Typography variant="body2" component="span">
+                      {numberOfInvoices ?? ""}
+                    </Typography>
+                  </Stack>
                   <Button
                     variant="outlined"
                     sx={{
@@ -699,6 +714,19 @@ function Invoice() {
             <InvoiceDetailsWindowUp />
           </Box>
         </Box>
+
+
+
+
+
+
+
+
+
+
+
+
+
         <Box
           minHeight={300}
           sx={{
