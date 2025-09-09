@@ -419,7 +419,7 @@ export async function createInvoiceDetails(InvoiceCompleteDetail) {
   // Update invoice details
   try {
     await pool.query(
-      "UPDATE invoice SET inv_advance = ?, inv_special_message = ?, inv_idcardstatus = ?, inv_cusid = ?, inv_createddate = ?, inv_discount = ?, inv_updatedstatus = ? WHERE inv_id = ?",
+      "UPDATE invoice SET inv_advance = ?, inv_special_message = ?, inv_idcardstatus = ?, inv_cusid = ?, inv_createddate = ?, inv_discount = ?, inv_updatedstatus = ?,inv_childidcardstatus=?,	inv_childid =? WHERE inv_id = ?",
       [
         InvoiceCompleteDetail.advance,
         "", // Empty string for inv_special_message
@@ -429,6 +429,8 @@ export async function createInvoiceDetails(InvoiceCompleteDetail) {
         InvoiceCompleteDetail.discount ?? 0,
         1,
         InvoiceCompleteDetail.InvoiceID,
+        InvoiceCompleteDetail.iDHandoverStatus,
+
       ]
     );
   } catch (error) {

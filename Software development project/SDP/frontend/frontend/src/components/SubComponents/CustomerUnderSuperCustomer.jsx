@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -14,17 +14,24 @@ import {
   Chip,
   Divider,
   InputAdornment,
-  CircularProgress
+  CircularProgress,
+  List,
+  ListItem,
+  ListItemText,
+  Alert,
+  Card,
+  CardContent,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import PeopleIcon from "@mui/icons-material/People";
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import axios from "axios";
 import Swal from "sweetalert2";
 
-// Child Customer Form Schema (similar to main customer form)
+// Child Customer Form Schema
 const childCustomerSchema = yup.object().shape({
   fname: yup.string().required().min(3).max(15),
   lname: yup.string().max(25),
@@ -80,6 +87,9 @@ function ChildCustomerDialog({ open, onClose }) {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedSuperCustomer, setSelectedSuperCustomer] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [childCustomers, setChildCustomers] = useState([]);
+  const [childCustomersLoading, setChildCustomersLoading] = useState(false);
+  const [childCustomersError, setChildCustomersError] = useState("");
 
   const {
     register,
@@ -87,15 +97,43 @@ function ChildCustomerDialog({ open, onClose }) {
     formState: { errors },
     setValue,
     reset,
-    watch
+    watch,
   } = useForm({
     resolver: yupResolver(childCustomerSchema),
   });
 
+  // Fetch child customers when a parent is selected
+  useEffect(() => {
+    if (selectedSuperCustomer) {
+      fetchChildCustomers(selectedSuperCustomer.cus_id);
+    } else {
+      setChildCustomers([]);
+    }
+  }, [selectedSuperCustomer]);
+
+  const fetchChildCustomers = async (parentId) => {
+    setChildCustomersLoading(true);
+    setChildCustomersError("");
+    try {
+      const response = await axios.get(
+        `http://localhost:8085/getChildCustomers/${parentId}`
+      );
+      if (response.data.success) {
+        setChildCustomers(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching child customers:", error);
+      setChildCustomersError("Failed to fetch child customers");
+      setChildCustomers([]);
+    } finally {
+      setChildCustomersLoading(false);
+    }
+  };
+
   // Search for super customers
   const handleSearch = async () => {
     if (!searchValue.trim()) return;
-    
+
     setSearchLoading(true);
     try {
       const response = await axios.get(
@@ -120,6 +158,7 @@ function ChildCustomerDialog({ open, onClose }) {
   // Clear selection
   const clearSelection = () => {
     setSelectedSuperCustomer(null);
+    setChildCustomers([]);
     reset();
   };
 
@@ -139,26 +178,46 @@ function ChildCustomerDialog({ open, onClose }) {
       // Add super customer ID to the data
       const submitData = {
         ...data,
-        superCustomerId: selectedSuperCustomer.cus_id
+        superCustomerId: selectedSuperCustomer.cus_id,
       };
 
       const response = await axios.post(
         "http://localhost:8085/createChildCustomer",
         submitData
       );
-      
-      Swal.fire("Success", "Child customer created successfully", "success");
-      onClose();
-      reset();
-      setSelectedSuperCustomer(null);
+
+      if (response.data.success) {
+        Swal.fire("Success", "Child customer created successfully", "success");
+        // Refresh the child customers list
+        fetchChildCustomers(selectedSuperCustomer.cus_id);
+        // Reset the form but keep the parent selected
+        reset();
+        onClose();
+      } else {
+        Swal.fire(
+          "Error",
+          response.data.message || "Failed to create child customer",
+          "error"
+        );
+      }
     } catch (error) {
       console.error("Error creating child customer:", error);
-      Swal.fire("Error", "Failed to create child customer", "error");
+      Swal.fire(
+        "Error",
+        error.response?.data?.message || "Failed to create child customer",
+        "error"
+      );
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="lg"
+      fullWidth
+      sx={{ "& .MuiDialog-paper": { maxHeight: "90vh" } }}
+    >
       <DialogTitle>
         <Typography variant="h5" component="div">
           Add Child Customer
@@ -167,7 +226,7 @@ function ChildCustomerDialog({ open, onClose }) {
           Create a new customer under a super customer
         </Typography>
       </DialogTitle>
-      
+
       <DialogContent dividers>
         <Grid container spacing={3}>
           {/* Left side - Super Customer Search and Selection */}
@@ -176,7 +235,7 @@ function ChildCustomerDialog({ open, onClose }) {
               <Typography variant="h6" gutterBottom>
                 Super Customer Selection
               </Typography>
-              
+
               <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
                 <TextField
                   fullWidth
@@ -209,14 +268,20 @@ function ChildCustomerDialog({ open, onClose }) {
                     <Paper
                       key={customer.cus_id}
                       variant="outlined"
-                      sx={{ p: 1, mb: 1, cursor: "pointer" }}
+                      sx={{
+                        p: 1,
+                        mb: 1,
+                        cursor: "pointer",
+                        "&:hover": { bgcolor: "action.hover" },
+                      }}
                       onClick={() => selectSuperCustomer(customer)}
                     >
                       <Typography variant="subtitle2">
                         {customer.cus_fname} {customer.cus_lname}
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        ID: {customer.cus_id} | NIC: {customer.nic} | Phone: {customer.cus_phone_number}
+                        ID: {customer.cus_id} | NIC: {customer.nic} | Phone:{" "}
+                        {customer.cus_phone_number}
                       </Typography>
                     </Paper>
                   ))}
@@ -229,9 +294,13 @@ function ChildCustomerDialog({ open, onClose }) {
                   <Typography variant="subtitle2" gutterBottom>
                     Selected Super Customer:
                   </Typography>
-                  <Paper variant="outlined" sx={{ p: 1, bgcolor: "success.light" }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{ p: 1, bgcolor: "success.light" }}
+                  >
                     <Typography variant="body1" fontWeight="bold">
-                      {selectedSuperCustomer.cus_fname} {selectedSuperCustomer.cus_lname}
+                      {selectedSuperCustomer.cus_fname}{" "}
+                      {selectedSuperCustomer.cus_lname}
                     </Typography>
                     <Typography variant="body2">
                       ID: {selectedSuperCustomer.cus_id}
@@ -242,14 +311,88 @@ function ChildCustomerDialog({ open, onClose }) {
                     <Typography variant="body2">
                       Phone: {selectedSuperCustomer.cus_phone_number}
                     </Typography>
-                    <Button 
-                      size="small" 
+                    <Button
+                      size="small"
                       onClick={clearSelection}
                       sx={{ mt: 1 }}
                     >
                       Change Selection
                     </Button>
                   </Paper>
+
+                  {/* Child Customers Display Section */}
+                  <Box sx={{ mt: 2 }}>
+                    <Divider sx={{ my: 1 }} />
+                    <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                      <PeopleIcon sx={{ mr: 1 }} />
+                      <Typography variant="subtitle2">
+                        Existing Child Customers ({childCustomers.length})
+                      </Typography>
+                    </Box>
+
+                    {childCustomersLoading && (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "center",
+                          py: 2,
+                        }}
+                      >
+                        <CircularProgress size={24} />
+                      </Box>
+                    )}
+
+                    {childCustomersError && (
+                      <Alert severity="error" sx={{ mb: 2 }}>
+                        {childCustomersError}
+                      </Alert>
+                    )}
+
+                    {!childCustomersLoading && childCustomers.length === 0 && (
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
+                        sx={{ py: 2, textAlign: "center" }}
+                      >
+                        No child customers found for this parent
+                      </Typography>
+                    )}
+
+                    {!childCustomersLoading && childCustomers.length > 0 && (
+                      <Box sx={{ maxHeight: 200, overflow: "auto" }}>
+                        <List dense>
+                          {childCustomers.map((child) => (
+                            <Card
+                              key={child.child_cus_id}
+                              variant="outlined"
+                              sx={{ mb: 1 }}
+                            >
+                              <CardContent
+                                sx={{ py: 1, "&:last-child": { pb: 1 } }}
+                              >
+                                <Typography variant="subtitle2">
+                                  {child.child_cus_fname}{" "}
+                                  {child.child_cus_lname || ""}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  color="textSecondary"
+                                >
+                                  Phone: {child.child_cus_phone_number}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  color="textSecondary"
+                                >
+                                  NIC: {child.child_cus_nic || "N/A"}
+                                </Typography>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </List>
+                      </Box>
+                    )}
+                  </Box>
                 </Box>
               )}
             </Paper>
@@ -260,13 +403,13 @@ function ChildCustomerDialog({ open, onClose }) {
             <Typography variant="h6" gutterBottom>
               Child Customer Details
             </Typography>
-            
+
             <form onSubmit={handleSubmit(onSubmit)}>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="First Name"
+                    label="First Name *"
                     {...register("fname")}
                     error={!!errors.fname}
                     helperText={errors.fname?.message}
@@ -281,7 +424,7 @@ function ChildCustomerDialog({ open, onClose }) {
                     helperText={errors.lname?.message}
                   />
                 </Grid>
-                
+
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
@@ -293,21 +436,24 @@ function ChildCustomerDialog({ open, onClose }) {
                       endAdornment: selectedSuperCustomer && (
                         <InputAdornment position="end">
                           <IconButton
-                            onClick={() => inheritField("nic", selectedSuperCustomer.nic)}
+                            onClick={() =>
+                              inheritField("nic", selectedSuperCustomer.nic)
+                            }
                             edge="end"
+                            title="Copy from super customer"
                           >
-                            <ContentCopyIcon />
+                            <ContentCopyIcon fontSize="small" />
                           </IconButton>
                         </InputAdornment>
                       ),
                     }}
                   />
                 </Grid>
-                
+
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label="Phone Number"
+                    label="Phone Number *"
                     {...register("phoneNumber")}
                     error={!!errors.phoneNumber}
                     helperText={errors.phoneNumber?.message}
@@ -315,27 +461,33 @@ function ChildCustomerDialog({ open, onClose }) {
                       endAdornment: selectedSuperCustomer && (
                         <InputAdornment position="end">
                           <IconButton
-                            onClick={() => inheritField("phoneNumber", selectedSuperCustomer.cus_phone_number)}
+                            onClick={() =>
+                              inheritField(
+                                "phoneNumber",
+                                selectedSuperCustomer.cus_phone_number
+                              )
+                            }
                             edge="end"
+                            title="Copy from super customer"
                           >
-                            <ContentCopyIcon />
+                            <ContentCopyIcon fontSize="small" />
                           </IconButton>
                         </InputAdornment>
                       ),
                     }}
                   />
                 </Grid>
-                
+
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
-                    label="Address Line 1"
+                    label="Address Line 1 *"
                     {...register("address1")}
                     error={!!errors.address1}
                     helperText={errors.address1?.message}
                   />
                 </Grid>
-                
+
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
@@ -350,11 +502,11 @@ function ChildCustomerDialog({ open, onClose }) {
           </Grid>
         </Grid>
       </DialogContent>
-      
+
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button 
-          onClick={handleSubmit(onSubmit)} 
+        <Button
+          onClick={handleSubmit(onSubmit)}
           variant="contained"
           disabled={!selectedSuperCustomer}
         >

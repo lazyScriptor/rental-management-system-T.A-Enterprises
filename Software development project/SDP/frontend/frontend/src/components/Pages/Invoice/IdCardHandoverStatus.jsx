@@ -31,7 +31,7 @@ function IdCardHandoverStatus() {
       <Tooltip title="Toggle if the customer's ID card is kept with you">
         <InfoOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
       </Tooltip>
-      <Typography variant="body2">Keep ID card</Typography>
+      <Typography variant="body2">Handover ID card</Typography>
       <Switch size="small" checked={isKept} onChange={handleToggle} />
       <Chip
         size="small"

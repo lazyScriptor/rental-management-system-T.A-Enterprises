@@ -5,8 +5,6 @@ import jsPDF from "jspdf";
 import {
   Box,
   Button,
-  Fab,
-  FormLabel,
   Paper,
   Stack,
   TextField,
@@ -15,9 +13,16 @@ import {
   Chip,
   Divider,
   Alert,
+  List,
+  ListItem,
+  ListItemText,
+  IconButton,
+  Collapse,
+  Switch,
+  Tooltip
 } from "@mui/material";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faUpload } from "@fortawesome/free-solid-svg-icons";
+import { faSearch } from "@fortawesome/free-solid-svg-icons";
 import {
   AuthContext,
   InvoiceContext,
@@ -37,24 +42,17 @@ import InvoiceRightSideNew from "./Invoice/InvoiceRightSideNew.jsx";
 import InvoiceHandOverForm from "./Invoice/InvoiceHandOverForm.jsx";
 import FeedbackComponent from "../SubComponents/FeedbackComponent.jsx";
 import CompleteInvoiceTable from "./Invoice/CompleteInvoiceTable.jsx";
-import InvoicePdf from "./Invoice/InvoicePdf.jsx";
 import { useTheme } from "@emotion/react";
 import { faAddressCard } from "@fortawesome/free-regular-svg-icons";
 import YoutubeSearchedForIcon from "@mui/icons-material/YoutubeSearchedFor";
 import BackspaceOutlinedIcon from "@mui/icons-material/BackspaceOutlined";
 import Swal from "sweetalert2";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
-import AddIcCallOutlinedIcon from "@mui/icons-material/AddIcCallOutlined";
-import ContactMailOutlinedIcon from "@mui/icons-material/ContactMailOutlined";
-import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
-import { InvoicePdfWarehouseHandler } from "../RoleBasedAccess/Warehouse handler/Invoice/InvoiceWarehouseHandler.jsx";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
-import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc";
-import timezone from "dayjs/plugin/timezone";
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
+import PeopleIcon from "@mui/icons-material/People";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 
 const textFieldStyle = {
   "& .MuiOutlinedInput-root": {
@@ -62,35 +60,64 @@ const textFieldStyle = {
   },
 };
 
+// Child ID Card Status Component
+function ChildIdCardStatus() {
+  const {
+    invoiceObject,
+    updateValue,
+  } = useContext(InvoiceContext);
+
+  const isKept = Boolean(invoiceObject?.childIdCardStatus);
+
+  const handleToggle = (event) => {
+    const next = event.target.checked;
+    updateValue("childIdCardStatus", next);
+  };
+
+  return (
+    <Box
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 1,
+        px: 1.25,
+        py: 0.75,
+        borderRadius: 2,
+        bgcolor: (theme) => theme.palette.secondary[50],
+        border: (theme) => `1px solid ${theme.palette.secondary[200]}`,
+      }}
+    >
+      <Tooltip title="Toggle if the child customer's ID card is kept with you">
+        <InfoOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
+      </Tooltip>
+      <Typography variant="body2">Child ID Card</Typography>
+      <Switch size="small" checked={isKept} onChange={handleToggle} />
+      <Chip
+        size="small"
+        label={isKept ? "Kept" : "Not kept"}
+        color={isKept ? "success" : "default"}
+        variant={isKept ? "filled" : "outlined"}
+      />
+    </Box>
+  );
+}
+
 function Invoice() {
   const theme = useTheme();
   const {
-    fullDetailsEquipmentArray,
-    setFullDetailsEquipmentArray,
-    checkState,
-    setCheckState,
-    setPaymentArray,
-    eqObject,
-    setEqObject,
     invoiceSearchBtnStatus,
     setInvoiceSearchBtnStatus,
     invoiceObject,
-    setInvoiceObject,
     clearObject,
     updateValue,
-    clearValues,
+    setPaymentArray,
     buttonDesable,
-    setButtonDisable,
-    updateEqObject,
   } = useContext(InvoiceContext);
   const { showAlert } = useContext(SwalContext);
 
   const navigate = useNavigate();
   const { setIsAuthenticated } = useContext(AuthContext);
-
-  // PopupContext handlers for payments dialog
-  const { boolvalue, setBoolvalue, userData, setUserData } =
-    useContext(PopupContext);
+  const { boolvalue, setBoolvalue } = useContext(PopupContext);
 
   const [phoneNumberorNic, setPhoneNumberorNic] = useState("");
   const [invoiceId, setInvoiceId] = useState("0000");
@@ -120,14 +147,23 @@ function Invoice() {
     Cus: "",
   });
 
-  // Additions for customer invoice count and incomplete invoice IDs
   const [numberOfInvoices, setNumberOfInvoices] = useState(0);
   const [incompleteInvoiceIds, setIncompleteInvoiceIds] = useState([]);
+  const [childCustomers, setChildCustomers] = useState([]);
+  const [childCustomersLoading, setChildCustomersLoading] = useState(false);
+  const [showChildCustomers, setShowChildCustomers] = useState(false);
+  const [selectedChildCustomer, setSelectedChildCustomer] = useState(null);
+  const [inheritInvoiceId, setInheritInvoiceId] = useState("");
+  const [inheritInvoiceData, setInheritInvoiceData] = useState(null);
+  const [inheritInvoiceLoading, setInheritInvoiceLoading] = useState(false);
+  const [inheritValidationError, setInheritValidationError] = useState("");
 
   useEffect(() => {}, [invoiceObject]);
+  
   useEffect(() => {
     handleCreateNew();
   }, []);
+  
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentDateTime(new Date());
@@ -153,6 +189,121 @@ function Invoice() {
     return (
       validFormatCheck1.test(phoneNumber) || validFormatCheck2.test(phoneNumber)
     );
+  };
+
+  const fetchChildCustomers = async (parentId) => {
+    setChildCustomersLoading(true);
+    try {
+      const response = await axios.get(
+        `http://localhost:8085/getChildCustomers/${parentId}`
+      );
+      if (response.data.success) {
+        setChildCustomers(response.data.data);
+      } else {
+        setChildCustomers([]);
+      }
+    } catch (error) {
+      console.error("Error fetching child customers:", error);
+      setChildCustomers([]);
+    } finally {
+      setChildCustomersLoading(false);
+    }
+  };
+
+  const handleInheritInvoiceSearch = async () => {
+    if (!inheritInvoiceId.trim()) {
+      Swal.fire("Error", "Please enter an invoice ID", "error");
+      return;
+    }
+
+    setInheritValidationError("");
+    setInheritInvoiceLoading(true);
+    
+    try {
+      const response = await axios.get(
+        `http://localhost:8085/invoiceDataRetrieve/${inheritInvoiceId}`
+      );
+
+      if (response.status === 200) {
+        const invoiceData = response.data;
+        setInheritInvoiceData(invoiceData);
+        
+        // Validate if the inherited invoice belongs to the same parent customer
+        if (invoiceData.customerDetails && invoiceObject.customerDetails) {
+          const inheritedCustomerId = invoiceData.customerDetails.cus_id;
+          const currentCustomerId = invoiceObject.customerDetails.cus_id;
+          
+          if (inheritedCustomerId === currentCustomerId) {
+            if (invoiceData.idStatus) {
+              Swal.fire("Success", "ID card available from this invoice", "success");
+            } else {
+              Swal.fire("Info", "This invoice doesn't have an ID card on file", "info");
+            }
+            return;
+          }
+          
+          try {
+            const childCheckResponse = await axios.get(
+              `http://localhost:8085/checkChildCustomerParent/${inheritedCustomerId}`
+            );
+            
+            if (childCheckResponse.data.success) {
+              const childParentId = childCheckResponse.data.parentId;
+              if (childParentId === currentCustomerId) {
+                if (invoiceData.idStatus) {
+                  Swal.fire("Success", "ID card available from child customer's invoice", "success");
+                } else {
+                  Swal.fire("Info", "This invoice doesn't have an ID card on file", "info");
+                }
+                return;
+              } else {
+                setInheritValidationError("ID card must belong to the same parent customer or their child");
+                Swal.fire("Error", "ID card must belong to the same parent customer or their child", "error");
+                return;
+              }
+            } else {
+              setInheritValidationError("ID card must belong to the same customer");
+              Swal.fire("Error", "ID card must belong to the same customer", "error");
+              return;
+            }
+          } catch (error) {
+            console.error("Error checking child customer parent:", error);
+            setInheritValidationError("Cannot validate customer relationship");
+            Swal.fire("Error", "Cannot validate customer relationship. Please ensure the ID card belongs to the same customer.", "error");
+            return;
+          }
+        }
+        
+        if (invoiceData.idStatus) {
+          Swal.fire("Success", "ID card available from this invoice", "success");
+        } else {
+          Swal.fire("Info", "This invoice doesn't have an ID card on file", "info");
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching invoice for ID inheritance:", error);
+      if (error.response?.status === 404) {
+        Swal.fire("Error", "Invoice not found", "error");
+      } else {
+        Swal.fire("Error", "Could not find the invoice", "error");
+      }
+      setInheritInvoiceData(null);
+    } finally {
+      setInheritInvoiceLoading(false);
+    }
+  };
+
+  const useInheritedIdStatus = () => {
+    if (inheritInvoiceData && inheritInvoiceData.idStatus) {
+      // Add both child customer ID and inherited ID status to invoice object
+      updateValue("iDstatus", true);
+      updateValue("inheritedIdStatus", true);
+      updateValue("inheritedIdInvoice", inheritInvoiceId);
+      updateValue("inheritedIdCustomer", inheritInvoiceData.customerDetails);
+      updateValue("childCustomerId", selectedChildCustomer.child_cus_id);
+      
+      Swal.fire("Success", "ID card status inherited successfully", "success");
+    }
   };
 
   const handleSearchPhoneNumberorNic = async () => {
@@ -195,8 +346,13 @@ function Invoice() {
       if (Array.isArray(data) && data.length > 0) {
         setData(data[0]);
         updateValue("customerDetails", data[0]);
+        
+        setSelectedChildCustomer(null);
+        updateValue("childCustomer", null);
+        updateValue("childIdCardStatus", false); // Reset child ID card status
+        
+        fetchChildCustomers(data[0].cus_id);
 
-        // Fetch number_of_invoices
         try {
           const id = data[0].cus_id;
           const cusInvoiceCount = await axios.get(
@@ -213,7 +369,6 @@ function Invoice() {
           setNumberOfInvoices(0);
         }
 
-        // Fetch incomplete invoice IDs
         try {
           const id = data[0].cus_id;
           const resIncomplete = await axios.get(
@@ -227,45 +382,27 @@ function Invoice() {
         setValidationMessage(
           "No customer found with this ID, phone number, or NIC"
         );
-        setData({
-          cus_fname: "",
-          cus_address1: "",
-          cus_address2: "",
-          nic: "",
-          cus_phone_number: "",
-          cus_id: "",
-        });
+        setData(clearData);
         updateValue("customerDetails", clearData);
         setNumberOfInvoices(0);
         setIncompleteInvoiceIds([]);
+        setChildCustomers([]);
       } else {
         console.error("Unexpected response format:", data);
         setValidationMessage("Unexpected error occurred");
-        setData({
-          cus_fname: "",
-          cus_address1: "",
-          cus_address2: "",
-          nic: "",
-          cus_phone_number: "",
-          cus_id: "",
-        });
+        setData(clearData);
         updateValue("customerDetails", clearData);
         setNumberOfInvoices(0);
         setIncompleteInvoiceIds([]);
+        setChildCustomers([]);
       }
     } catch (error) {
       setValidationMessage("Error occurred in front end");
-      setData({
-        cus_fname: "",
-        cus_address1: "",
-        cus_address2: "",
-        nic: "",
-        cus_phone_number: "",
-        cus_id: "",
-      });
+      setData(clearData);
       updateValue("customerDetails", clearData);
       setNumberOfInvoices(0);
       setIncompleteInvoiceIds([]);
+      setChildCustomers([]);
       console.error("Error in handleSearchPhoneNumberorNic:", error);
     }
   };
@@ -276,12 +413,16 @@ function Invoice() {
     setData(clearData);
     setPhoneNumberorNic("");
     setValidationMessage("");
-    setEqObject("");
     clearObject();
     setPaymentArray([]);
     setUpdateBtnStatus(false);
     setNumberOfInvoices(0);
     setIncompleteInvoiceIds([]);
+    setChildCustomers([]);
+    setSelectedChildCustomer(null);
+    setInheritInvoiceId("");
+    setInheritInvoiceData(null);
+    setInheritValidationError("");
     try {
       await axios.get("http://localhost:8085/invoiceIdRetrieve").then((res) => {
         setInvoiceId(res.data);
@@ -310,7 +451,19 @@ function Invoice() {
           updateValue("payments", payment);
         });
         updateValue("customerDetails", response.data.customerDetails);
-        // Populate counts for this customer when searching by invoice ID
+        
+        if (response.data.childCustomer) {
+          setSelectedChildCustomer(response.data.childCustomer);
+          updateValue("childCustomer", response.data.childCustomer);
+          updateValue("childCustomerId", response.data.childCustomer.child_cus_id);
+          updateValue("childIdCardStatus", response.data.childIdCardStatus || false);
+        } else {
+          setSelectedChildCustomer(null);
+          updateValue("childCustomer", null);
+          updateValue("childCustomerId", null);
+          updateValue("childIdCardStatus", false);
+        }
+        
         try {
           const id = response.data.customerDetails?.cus_id;
           if (id) {
@@ -337,6 +490,8 @@ function Invoice() {
             } catch (err) {
               setIncompleteInvoiceIds([]);
             }
+            
+            fetchChildCustomers(id);
           } else {
             setNumberOfInvoices(0);
             setIncompleteInvoiceIds([]);
@@ -355,6 +510,14 @@ function Invoice() {
           "inv_completed_datetime",
           response.data.inv_completed_datetime
         );
+        
+        // Set inherited ID fields if they exist
+        if (response.data.inheritedIdStatus) {
+          updateValue("inheritedIdStatus", response.data.inheritedIdStatus);
+          updateValue("inheritedIdInvoice", response.data.inheritedIdInvoice);
+          updateValue("inheritedIdCustomer", response.data.inheritedIdCustomer);
+        }
+        
         setUpdateBtnStatus(true);
       } else if (response.status === 404) {
         await Swal.fire({
@@ -420,9 +583,15 @@ function Invoice() {
     });
   };
 
-  // Payment button handler
   const handleProceedPayment = () => {
     setBoolvalue(true);
+  };
+
+  const handleSelectChildCustomer = (childCustomer) => {
+    setSelectedChildCustomer(childCustomer);
+    updateValue("childCustomer", childCustomer);
+    updateValue("childCustomerId", childCustomer.child_cus_id);
+    updateValue("childIdCardStatus", false); // Reset child ID card status when selecting a new child
   };
 
   return (
@@ -518,11 +687,6 @@ function Invoice() {
           </Box>
         </Box>
 
-
-
-
-
-
         <Box
           sx={{
             display: "flex",
@@ -563,6 +727,7 @@ function Invoice() {
                 pt: 3,
                 pb: 3,
                 borderRadius: 3,
+                overflow: 'auto'
               }}
             >
               <Box
@@ -641,6 +806,8 @@ function Invoice() {
                       updateValue("customerDetails", clearData);
                       setNumberOfInvoices(0);
                       setIncompleteInvoiceIds([]);
+                      setChildCustomers([]);
+                      setSelectedChildCustomer(null);
                     }}
                     sx={{
                       color: (theme) => theme.palette.primary.error[400],
@@ -669,6 +836,122 @@ function Invoice() {
                   <Alert severity="warning" sx={{ mt: 1 }}>
                     Incomplete Invoice IDs: {incompleteInvoiceIds.join(", ")}
                   </Alert>
+                )}
+
+                {childCustomers.length > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    <Box 
+                      sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        cursor: 'pointer',
+                        mb: 1 
+                      }}
+                      onClick={() => setShowChildCustomers(!showChildCustomers)}
+                    >
+                      <PeopleIcon sx={{ mr: 1 }} />
+                      <Typography variant="subtitle2">
+                        Child Customers ({childCustomers.length})
+                      </Typography>
+                      {showChildCustomers ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    </Box>
+                    
+                    <Collapse in={showChildCustomers}>
+                      <Paper variant="outlined" sx={{ p: 1, mb: 2, maxHeight: 150, overflow: 'auto' }}>
+                        <List dense>
+                          {childCustomers.map((child) => (
+                            <ListItem 
+                              key={child.child_cus_id}
+                              sx={{ 
+                                cursor: 'pointer',
+                                backgroundColor: selectedChildCustomer?.child_cus_id === child.child_cus_id 
+                                  ? 'action.selected' 
+                                  : 'transparent',
+                                borderRadius: 1,
+                                '&:hover': { backgroundColor: 'action.hover' }
+                              }}
+                              onClick={() => handleSelectChildCustomer(child)}
+                            >
+                              <ListItemText 
+                                primary={`${child.child_cus_fname} ${child.child_cus_lname || ''}`}
+                                secondary={`Phone: ${child.child_cus_phone_number}`}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      </Paper>
+                    </Collapse>
+                  </Box>
+                )}
+
+                {selectedChildCustomer && (
+                  <Box sx={{ mt: 1 }}>
+                    <Alert severity="info" sx={{ mb: 1 }}>
+                      <Typography variant="subtitle2">
+                        Selected Child: {selectedChildCustomer.child_cus_fname} {selectedChildCustomer.child_cus_lname || ''}
+                      </Typography>
+                      <Typography variant="body2">
+                        Phone: {selectedChildCustomer.child_cus_phone_number}
+                      </Typography>
+                    </Alert>
+                  </Box>
+                )}
+
+                {selectedChildCustomer && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      Inherit ID from Another Invoice
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <TextField
+                        value={inheritInvoiceId}
+                        onChange={(e) => setInheritInvoiceId(e.target.value)}
+                        sx={[{ width: '200px' }, textFieldStyle]}
+                        label="Invoice ID"
+                        variant="outlined"
+                        size="small"
+                        error={!!inheritValidationError}
+                        helperText={inheritValidationError}
+                      />
+                      <Button 
+                        onClick={handleInheritInvoiceSearch}
+                        disabled={inheritInvoiceLoading}
+                        variant="outlined"
+                        size="small"
+                      >
+                        {inheritInvoiceLoading ? 'Searching...' : 'Search'}
+                      </Button>
+                    </Box>
+                    
+                    {inheritInvoiceData && (
+                      <Alert 
+                        severity={inheritInvoiceData.idStatus ? "success" : "warning"}
+                        sx={{ mb: 1 }}
+                        action={
+                          inheritInvoiceData.idStatus && (
+                            <Button 
+                              color="inherit" 
+                              size="small"
+                              onClick={useInheritedIdStatus}
+                            >
+                              Use This ID
+                            </Button>
+                          )
+                        }
+                      >
+                        <Typography variant="body2">
+                          Invoice #{inheritInvoiceId}: {inheritInvoiceData.idStatus 
+                            ? "ID Card Available" 
+                            : "No ID Card on File"}
+                        </Typography>
+                        {inheritInvoiceData.customerDetails && (
+                          <Typography variant="caption" display="block">
+                            Customer: {inheritInvoiceData.customerDetails.cus_fname} {inheritInvoiceData.customerDetails.cus_lname || ''}
+                          </Typography>
+                        )}
+                      </Alert>
+                    )}
+                  </Box>
                 )}
 
                 <Box sx={{ mt: 1 }}>
@@ -769,6 +1052,7 @@ function Invoice() {
                   </Button>
                   <IdCardStatus />
                   <IdCardHandoverStatus />
+                  {selectedChildCustomer && <ChildIdCardStatus />}
                   {invoiceSearchBtnStatus && <FeedbackComponent />}
                 </Box>
               </Box>
@@ -786,17 +1070,7 @@ function Invoice() {
           </Box>
         </Box>
 
-
-
-
-
-
-
-
-
-
-
-
+   
 
         <Box
           minHeight={300}
@@ -845,15 +1119,9 @@ function Invoice() {
           </Box>
         </Box>
       </Box>
-      {/* <InvoicePdfWarehouseHandler/> */}
       <OverlayDialogBox>
         <Payments handleInvoiceSearch={handleInvoiceSearch} />
       </OverlayDialogBox>
-      {/* {isInvoiceUpdateFormShow && (
-        <InvoiceUpdateForm
-          setIsInvoiceUpdateFormShow={setIsInvoiceUpdateFormShow} isInvoiceUpdateFormShow={isInvoiceUpdateFormShow}
-        />
-      )} */}
     </>
   );
 }
