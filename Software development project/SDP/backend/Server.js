@@ -45,6 +45,9 @@ import {
   getCombinedInvoiceReports,
   reportsGetCustomerRatingsPerCustomer,
   getIncompleteInvoicesByCustomerId,
+  createChildCustomer,
+  getChildCustomersByParentId,
+  getChildCustomersWithParentDetails,
 } from "./database.js";
 
 const app = express();
@@ -712,5 +715,80 @@ app.get("/customer/incompleteInvoices/:customerId", async (req, res) => {
     res.json({ status: true, invoiceIds });
   } catch (error) {
     res.json({ status: false, invoiceIds: [] });
+  }
+});
+
+
+app.post("/createChildCustomer", async (req, res) => {
+  try {
+    const customerDetails = await createChildCustomer(req.body);
+    return res.json({
+      message: `child customer details updated for the customer with id : ${req.body.id}`,
+    });
+  } catch (error) {
+    console.error("Error in updateCustomerDetails:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
+
+
+// API endpoint to search for customers
+app.get('/searchCustomerByValue/:value', (req, res) => {
+  const searchValue = `%${req.params.value}%`;
+  
+  const searchQuery = `
+    SELECT cus_id, cus_fname, cus_lname, nic, cus_phone_number 
+    FROM customers 
+    WHERE cus_id LIKE ? OR nic LIKE ? OR cus_phone_number LIKE ?
+    LIMIT 10
+  `;
+  
+  db.execute(
+    searchQuery,
+    [searchValue, searchValue, searchValue],
+    (err, results) => {
+      if (err) {
+        console.error('Search error:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Search failed'
+        });
+      }
+      
+      res.json(results);
+    }
+  );
+});
+
+
+// Get child customers by parent ID
+app.get('/getChildCustomers/:parentId', async (req, res) => {
+  try {
+    const { parentId } = req.params;
+    const result = await getChildCustomersByParentId(parentId);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in getChildCustomers API:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Alternative: Get child customers with parent details
+app.get('/getChildCustomersWithParent/:parentId', async (req, res) => {
+  try {
+    const { parentId } = req.params;
+    const result = await getChildCustomersWithParentDetails(parentId);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error in getChildCustomersWithParent API:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
   }
 });

@@ -1371,3 +1371,133 @@ export async function getIncompleteInvoicesByCustomerId(customerId) {
     return [];
   }
 }
+
+export async function createChildCustomer(obj) {
+  const {
+    fname,
+    lname,
+    nic,
+    phoneNumber,
+    address1,
+    address2,
+    superCustomerId
+  } = obj;
+
+  try {
+    // Validation
+    if (!superCustomerId) {
+      throw new Error('Super customer ID is required');
+    }
+
+    if (!fname || !phoneNumber || !address1) {
+      throw new Error('First name, phone number, and address are required fields');
+    }
+
+    // Check if super customer exists
+    const [superCustomerResults] = await pool.query(
+      'SELECT cus_id FROM customer WHERE cus_id = ?',
+      [superCustomerId]
+    );
+
+    if (superCustomerResults.length === 0) {
+      throw new Error('Super customer not found');
+    }
+
+    // Insert child customer
+    const [insertResult] = await pool.query(
+      `INSERT INTO childCustomer 
+        (child_cus_parentid, child_cus_fname, child_cus_lname, child_cus_nic, 
+         child_cus_phone_number, child_cus_address1, child_cus_address2) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [superCustomerId, fname, lname, nic, phoneNumber, address1, address2 || null]
+    );
+
+    return {
+      success: true,
+      message: 'Child customer created successfully',
+      customerId: insertResult.insertId
+    };
+  } catch (error) {
+    console.error('Error creating child customer:', error);
+    throw error;
+  }
+}
+
+
+export async function getChildCustomersByParentId(parentId) {
+  try {
+    // Validation
+    if (!parentId) {
+      throw new Error('Parent customer ID is required');
+    }
+
+    // Query to get all child customers for a specific parent
+    const [childCustomers] = await pool.query(
+      `SELECT 
+        child_cus_id,
+        child_cus_fname,
+        child_cus_lname,
+        child_cus_nic,
+        child_cus_phone_number,
+        child_cus_address1,
+        child_cus_address2,
+        child_cus_delete_status,
+        created_at,
+        updated_at
+       FROM childCustomer 
+       WHERE child_cus_parentid = ? AND child_cus_delete_status = 0
+       ORDER BY child_cus_fname, child_cus_lname`,
+      [parentId]
+    );
+
+    return {
+      success: true,
+      data: childCustomers,
+      count: childCustomers.length
+    };
+  } catch (error) {
+    console.error('Error retrieving child customers:', error);
+    throw error;
+  }
+}
+
+// Alternative: Get child customers with parent details
+export async function getChildCustomersWithParentDetails(parentId) {
+  try {
+    if (!parentId) {
+      throw new Error('Parent customer ID is required');
+    }
+
+    const [results] = await pool.query(
+      `SELECT 
+        cc.child_cus_id,
+        cc.child_cus_fname,
+        cc.child_cus_lname,
+        cc.child_cus_nic,
+        cc.child_cus_phone_number,
+        cc.child_cus_address1,
+        cc.child_cus_address2,
+        cc.created_at,
+        cc.updated_at,
+        c.cus_id as parent_id,
+        c.cus_fname as parent_fname,
+        c.cus_lname as parent_lname,
+        c.nic as parent_nic,
+        c.cus_phone_number as parent_phone
+       FROM childCustomer cc
+       JOIN customer c ON cc.child_cus_parentid = c.cus_id
+       WHERE cc.child_cus_parentid = ? AND cc.child_cus_delete_status = 0
+       ORDER BY cc.child_cus_fname, cc.child_cus_lname`,
+      [parentId]
+    );
+
+    return {
+      success: true,
+      data: results,
+      count: results.length
+    };
+  } catch (error) {
+    console.error('Error retrieving child customers with parent details:', error);
+    throw error;
+  }
+}
