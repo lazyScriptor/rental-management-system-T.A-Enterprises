@@ -40,6 +40,7 @@ import Checkbox from "@mui/material/Checkbox";
 import Swal from "sweetalert2";
 import Lottie from "react-lottie";
 import CustomerPage from "../../assets/CustomerPage.json";
+import CustomerUnderSuperCustomer from "./CustomerUnderSuperCustomer";
 
 
 function Row(props) {
@@ -424,6 +425,7 @@ export function CustomerPageMiddle() {
             height={"100%"}
             borderRadius={2}
           >
+            
             {/* Left side Box names,mic,pno*/}
             <Grid item xs={4}>
               <FormControl sx={{ gap: "20px", width: "100%" }}>
@@ -560,6 +562,7 @@ export function CustomerPageMiddle() {
                   border: `1px solid ${theme.palette.primary[500]}`,
                 }}
               >
+                
                 <Box display={"flex"} alignItems={"center"}>
                   <Checkbox
                     checked={!!errors.fname?.message}
@@ -619,6 +622,7 @@ export function CustomerPageMiddle() {
                   marginTop: "20px",
                 }}
               >
+                <CustomerUnderSuperCustomer/>
                 <Button
                   // onClick={handleSaveDetails}
                   variant="contained"

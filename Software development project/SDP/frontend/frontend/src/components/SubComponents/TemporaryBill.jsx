@@ -31,6 +31,15 @@ const TemporaryBill = () => {
   const { invoiceObject, totalPayments } = useContext(InvoiceContext);
   const billRef = useRef(null);
 
+  // Format number with proper thousand separators and decimal handling
+  const formatCurrency = (amount) => {
+    const num = Number(amount) || 0;
+    return num.toLocaleString('en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
+  };
+
   // ---- calculations (unchanged) ----
   const rentalCalculation = (row) => {
     const dateSet = Number(row.eqcat_dataset) || 0;
@@ -47,7 +56,6 @@ const TemporaryBill = () => {
       } else {
         finalRental =
           (specialRental + normalRental * (duration - dateSet)) * quantity;
-        // console.log("first",normalRental,specialRental,categoryId,dateSet,duration,qty)
       }
     } else {
       finalRental = normalRental * duration * quantity;
@@ -62,26 +70,26 @@ const TemporaryBill = () => {
     const specialRental = Number(row.spe_singleday_rent) || 0;
     const categoryId = Number(row.eqcat_id) || 0;
 
-    if (!duration) return normalRental;
+    if (!duration) return formatCurrency(normalRental);
 
     if (specialRental && categoryId === 2) {
       if (duration <= dateSet) {
         if (duration !== 1) {
           return (
             <>
-              {specialRental * 2}
+              {formatCurrency(specialRental * 2)}
               <span style={{ fontSize: "0.7rem" }}> : දින දෙකකට පමණි</span>
             </>
           );
         }
-        return specialRental;
+        return formatCurrency(specialRental);
       }
-      return normalRental;
+      return formatCurrency(normalRental);
     } else if (specialRental && categoryId !== 2) {
-      if (duration < dateSet) return specialRental;
-      return normalRental;
+      if (duration < dateSet) return formatCurrency(specialRental);
+      return formatCurrency(normalRental);
     }
-    return normalRental;
+    return formatCurrency(normalRental);
   };
 
   const handleDurationinDays = (duration) => {
@@ -134,7 +142,6 @@ const TemporaryBill = () => {
       } else {
         finalRental =
           (specialRental + normalRental * (duration - dateSet)) * quantity;
-        // console.log("first",normalRental,specialRental,categoryId,dateSet,duration,qty)
       }
     } else {
       finalRental = normalRental * duration * quantity;
@@ -164,24 +171,25 @@ const TemporaryBill = () => {
       sx={{
         width: "100%",
         display: "flex",
-        justifyContent: "center",
-        px: 2, // small gutter on very small screens
+        flexDirection: "column",
+        alignItems: "center",
+        px: 2,
       }}
     >
       <div ref={billRef} className="bill" style={{ width: "100%" }}>
         <Paper
           elevation={5}
           sx={{
-            mx: "auto", // center horizontally (prevents drift)
+            mx: "auto",
             my: 2,
             width: "100%",
-            maxWidth: BILL_MAX_WIDTH, // predictable card width
-            boxSizing: "border-box", // include padding in width
+            maxWidth: BILL_MAX_WIDTH,
+            boxSizing: "border-box",
             px: 3,
             py: 3,
             display: "flex",
             flexDirection: "column",
-            alignItems: "stretch", // children take full width
+            alignItems: "stretch",
           }}
         >
           {/* Header */}
@@ -293,14 +301,13 @@ const TemporaryBill = () => {
                   </TableHead>
                   <TableBody>
                     {notHandedOverItems.map((row, idx) => {
-                      const duration = today.diff(createdDate, "day") + 1; // include today
+                      const duration = today.diff(createdDate, "day") + 1;
                       const rateJSX = displayRateJSX(row, duration);
 
                       const total = (() => {
                         const dateSet = Number(row.eqcat_dataset) || 0;
                         const normalRental = Number(row.eq_rental) || 0;
-                        const specialRental =
-                          Number(row.spe_singleday_rent) || 0;
+                        const specialRental = Number(row.spe_singleday_rent) || 0;
                         const quantity = Number(row.inveq_borrowqty) || 0;
                         const categoryId = Number(row.eqcat_id) || 0;
 
@@ -326,35 +333,20 @@ const TemporaryBill = () => {
 
                       return (
                         <TableRow key={idx}>
-                          <TableCell
-                            align="center"
-                            sx={{ fontSize: "0.75rem" }}
-                          >
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                             {row.eq_name}
                           </TableCell>
-                          <TableCell
-                            align="center"
-                            sx={{ fontSize: "0.75rem" }}
-                          >
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                             {row.inveq_borrowqty}
                           </TableCell>
-                          <TableCell
-                            align="center"
-                            sx={{ fontSize: "0.75rem" }}
-                          >
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                             {duration}
                           </TableCell>
-                          <TableCell
-                            align="center"
-                            sx={{ fontSize: "0.75rem" }}
-                          >
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
                             {rateJSX}
                           </TableCell>
-                          <TableCell
-                            align="center"
-                            sx={{ fontSize: "0.75rem" }}
-                          >
-                            {total}
+                          <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                            {formatCurrency(total)}
                           </TableCell>
                         </TableRow>
                       );
@@ -371,7 +363,7 @@ const TemporaryBill = () => {
                         align="center"
                         sx={{ fontSize: "0.75rem", fontWeight: 600 }}
                       >
-                        {notHandedOverTotal}
+                        {formatCurrency(notHandedOverTotal)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -429,7 +421,7 @@ const TemporaryBill = () => {
                         {rateJSX}
                       </TableCell>
                       <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                        {rentalCalculation(row)}
+                        {formatCurrency(rentalCalculation(row))}
                       </TableCell>
                     </TableRow>
                   );
@@ -447,26 +439,9 @@ const TemporaryBill = () => {
                     align="center"
                     sx={{ fontSize: "0.75rem", fontWeight: 600 }}
                   >
-                    {grandTotal}
+                    {formatCurrency(grandTotal)}
                   </TableCell>
                 </TableRow>
-                {discount > 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      align="right"
-                      sx={{ fontSize: "0.75rem", fontWeight: 600 }}
-                    >
-                      Discount :
-                    </TableCell>
-                    <TableCell
-                      align="center"
-                      sx={{ fontSize: "0.75rem", fontWeight: 600 }}
-                    >
-                      -{discount}
-                    </TableCell>
-                  </TableRow>
-                )}
                 <TableRow>
                   <TableCell
                     colSpan={4}
@@ -477,9 +452,13 @@ const TemporaryBill = () => {
                   </TableCell>
                   <TableCell
                     align="center"
-                    sx={{ fontSize: "0.8rem", fontWeight: 700 }}
+                    sx={{ 
+                      fontSize: "0.8rem", 
+                      fontWeight: 700,
+                      backgroundColor: "#f5f5f5"
+                    }}
                   >
-                    {netTotal}
+                    {formatCurrency(netTotal)}
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -488,7 +467,7 @@ const TemporaryBill = () => {
 
           <Divider sx={{ my: 1.5 }} />
 
-          {/* Payments */}
+          {/* Payments Table */}
           <TableContainer sx={{ width: "100%" }}>
             <Table
               size="small"
@@ -515,25 +494,70 @@ const TemporaryBill = () => {
                       Advance Payment
                     </TableCell>
                     <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                      {invoiceObject.advance}
+                      {formatCurrency(invoiceObject.advance)}
                     </TableCell>
                   </TableRow>
                 ) : null}
 
-                {(invoiceObject?.payments ?? []).map((payment, index) => (
-                  <TableRow key={index}>
+                {(invoiceObject?.payments ?? []).map((payment, index) => {
+                  const amount = Number(payment.invpay_amount);
+                  const isRefund = amount < 0;
+                  
+                  return (
+                    <TableRow key={index}>
+                      <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
+                        {dayjs(payment.invpay_payment_date)
+                          .tz("Asia/Colombo")
+                          .format(`DD/MM | HH:mm`)}
+                      </TableCell>
+                      <TableCell 
+                        align="center" 
+                        sx={{ 
+                          fontSize: "0.75rem",
+                          color: isRefund ? "#d32f2f" : "inherit"
+                        }}
+                      >
+                        {formatCurrency(Math.abs(amount))}
+                        {isRefund && (
+                          <span style={{ 
+                            fontSize: "0.65rem", 
+                            color: "#d32f2f",
+                            marginLeft: "4px"
+                          }}>
+                            (Refunded)
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+
+                {/* Discount row - moved to payments section */}
+                {discount > 0 && (
+                  <TableRow>
                     <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                      {dayjs(payment.invpay_payment_date)
-                        .tz("Asia/Colombo")
-                        .format(`DD/MM | HH:mm`)}
+                      Discount Applied
                     </TableCell>
-                    <TableCell align="center" sx={{ fontSize: "0.75rem" }}>
-                      {payment.invpay_amount}
+                    <TableCell 
+                      align="center" 
+                      sx={{ 
+                        fontSize: "0.75rem",
+                        color: "#388e3c"
+                      }}
+                    >
+                      {formatCurrency(discount)}
+                      <span style={{ 
+                        fontSize: "0.65rem", 
+                        color: "#388e3c",
+                        marginLeft: "4px"
+                      }}>
+                        (Discount)
+                      </span>
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
 
-                <TableRow>
+                <TableRow sx={{ backgroundColor: "#f9f9f9" }}>
                   <TableCell
                     align="right"
                     sx={{ fontSize: "0.75rem", fontWeight: 600 }}
@@ -544,21 +568,32 @@ const TemporaryBill = () => {
                     align="center"
                     sx={{ fontSize: "0.75rem", fontWeight: 600 }}
                   >
-                    {calculateTotalAdvanceAndPayments()}
+                    {formatCurrency(calculateTotalAdvanceAndPayments())}
                   </TableCell>
                 </TableRow>
-                <TableRow>
+                <TableRow sx={{ 
+                  backgroundColor: balanceDue > 0 ? "#ffebee" : "#e8f5e8"
+                }}>
                   <TableCell
                     align="right"
-                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                    sx={{ 
+                      fontSize: "0.8rem", 
+                      fontWeight: 700,
+                      color: balanceDue > 0 ? "#d32f2f" : "#388e3c"
+                    }}
                   >
                     Balance Due :
                   </TableCell>
                   <TableCell
                     align="center"
-                    sx={{ fontSize: "0.75rem", fontWeight: 600 }}
+                    sx={{ 
+                      fontSize: "0.8rem", 
+                      fontWeight: 700,
+                      color: balanceDue > 0 ? "#d32f2f" : "#388e3c"
+                    }}
                   >
-                    {balanceDue}
+                    {formatCurrency(Math.abs(balanceDue))}
+                    {balanceDue < 0 && " (Overpaid)"}
                   </TableCell>
                 </TableRow>
               </TableBody>

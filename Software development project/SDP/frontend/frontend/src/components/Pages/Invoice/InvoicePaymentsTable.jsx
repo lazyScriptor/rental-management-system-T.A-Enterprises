@@ -107,12 +107,13 @@ function InvoicePaymentsTable() {
           {invoiceObject.advance && (
             <TableRow
               sx={{
-                "&:last-child td, &:last-child th": { border: 0 },
+                "&:last-child td, &:last-child th": { border:  0},
                 backgroundColor: (theme) => theme.palette.primary[50],
+                border: "2px solid black",
               }}
             >
-              <TableCell align="center">Advance payment</TableCell>
-              <TableCell align="center">{invoiceObject.advance}</TableCell>
+              <TableCell align="center" sx={{fontWeight:"bold"}}>Advance payment</TableCell>
+              <TableCell align="center" sx={{fontWeight:"bold"}}>{invoiceObject.advance}</TableCell>
               <TableCell align="center">
                 {editToggle && (
                   <button
@@ -126,36 +127,47 @@ function InvoicePaymentsTable() {
             </TableRow>
           )}
 
-          {invoiceObject.payments.map((payment, index) => (
-            <TableRow
-              key={index}
-              sx={{
-                "&:last-child td, &:last-child th": { border: 0 },
-                height: "40px",
-                backgroundColor: (theme) => theme.palette.primary[25],
-                "&:hover": {
-                  backgroundColor: (theme) => theme.palette.primary[50],
-                },
-              }}
-            >
-              <TableCell align="center">
-                {payment.invpay_payment_date
-                  ? new Date(payment.invpay_payment_date).toLocaleDateString()
-                  : ""}
-              </TableCell>
-              <TableCell align="center">{payment.invpay_amount}</TableCell>
-              <TableCell align="center">
-                {editToggle && (
-                  <button
-                    style={deleteButtonStyles}
-                    onClick={() => handleDelete(payment.invpay_payment_id)}
-                  >
-                    <DeleteTwoToneIcon sx={{ color: "white" }} />
-                  </button>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
+          {invoiceObject.payments.map((payment, index) => {
+            const isNegativePayment = payment.invpay_amount < 0;
+            return (
+              <TableRow
+                key={index}
+                sx={{
+                  "&:last-child td, &:last-child th": { border: 0 },
+                  height: "40px",
+                  backgroundColor: isNegativePayment
+                    ? "lightcoral"
+                    : (theme) => theme.palette.primary[25],
+                  "&:hover": {
+                    backgroundColor: (theme) => theme.palette.primary[50],
+                  },
+                }}
+              >
+                <TableCell align="center">
+                  {payment.invpay_payment_date
+                    ? new Date(payment.invpay_payment_date).toLocaleString("en-GB", {
+                        weekday: "short",
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : ""}
+                </TableCell>
+                <TableCell align="center">{payment.invpay_amount}</TableCell>
+                <TableCell align="center">
+                  {editToggle && (
+                    <button
+                      style={deleteButtonStyles}
+                      onClick={() => handleDelete(payment.invpay_payment_id)}
+                    >
+                      <DeleteTwoToneIcon sx={{ color: "white" }} />
+                    </button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
 
           {/* Add empty rows if needed */}
           {Array.from({ length: emptyRows }).map((_, index) => (

@@ -27,6 +27,7 @@ import {
 import OverlayDialogBox from "../SubComponents/OverlayDialogBox.jsx";
 import axios from "axios";
 import IdCardStatus from "./Invoice/IdCardStatus.jsx";
+import IdCardHandoverStatus from "./Invoice/IdCardHandoverStatus.jsx";
 import InvoiceDetailsWindowUp from "./Invoice/InvoiceDetailsWindowUp.jsx";
 import InvoiceDetailsWindowDown from "./Invoice/InvoiceDetailsWindowDown.jsx";
 import Payments from "./Invoice/Payments.jsx";
@@ -767,6 +768,7 @@ function Invoice() {
                     Payments
                   </Button>
                   <IdCardStatus />
+                  <IdCardHandoverStatus />
                   {invoiceSearchBtnStatus && <FeedbackComponent />}
                 </Box>
               </Box>

@@ -7,6 +7,8 @@ export default function InvoiceContextProvider({ children }) {
   );
   const [totalPayments, setTotalPayments] = useState(0);
   const [checkState, setCheckState] = useState(false);
+  const [handoverCheckState, setHandoverCheckState] = useState(false);
+
   const [eqObject, setEqObject] = useState([]);
   const [invoiceSearchBtnStatus, setInvoiceSearchBtnStatus] = useState(false);
   const [buttonDesable, setButtonDisable] = useState(false);
@@ -143,6 +145,8 @@ export default function InvoiceContextProvider({ children }) {
         clearObject,
         buttonDesable,
         setButtonDisable,
+        handoverCheckState,
+        setHandoverCheckState,
       }}
     >
       {children}
