@@ -13,6 +13,7 @@ import { InvoiceContext } from "../../../Contexts/Contexts";
 import YoutubeSearchedForIcon from "@mui/icons-material/YoutubeSearchedFor";
 import MousePopOver from "../../SubComponents/AlertComponents/MousePopOver";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import Swal from "sweetalert2";
 
 function InvoiceHandOverForm() {
   const [idFormData, setIdFormData] = useState({
@@ -58,6 +59,13 @@ function InvoiceHandOverForm() {
     setButtonDisable,
     clearObject,
   } = useContext(InvoiceContext);
+
+  const pendingEquipments = React.useMemo(() => {
+    const list = invoiceObject?.eqdetails || [];
+    return Array.isArray(list)
+      ? list.filter((item) => item?.inveq_return_date == null)
+      : [];
+  }, [invoiceObject]);
 
   // Determine if all equipments on this invoice have been handed over
   const allHandedOver = React.useMemo(() => {
@@ -205,22 +213,62 @@ function InvoiceHandOverForm() {
     }
   };
 
-  //   const handleHandover = () => {
-  //     const validationErrors = validateForm();
-  //     setEqErrors(validationErrors);
+  const handleEquipmentClick = async (equipment) => {
+    if (allHandedOver) return;
 
-  //     if (Object.keys(validationErrors).length === 0) {
-  //       console.log("This is the data", dateformatter());
-  //       // Add your handover logic here, similar to handleSubmit
-  //     }
-  //   };
+    const maxQty = Number(equipment?.inveq_borrowqty || 0);
+    const { value: qty, isConfirmed } = await Swal.fire({
+      title: `Return quantity for ${equipment?.eq_name || "equipment"}`,
+      text: `Borrowed: ${maxQty}`,
+      input: "number",
+      inputLabel: "Quantity to return",
+      inputAttributes: {
+        min: 1,
+        max: maxQty,
+        step: 1,
+      },
+      inputValue: maxQty > 0 ? maxQty : 1,
+      showCancelButton: true,
+      confirmButtonText: "Confirm",
+      preConfirm: (val) => {
+        const n = Number(val);
+        if (!Number.isInteger(n) || n <= 0) {
+          Swal.showValidationMessage("Enter a valid positive integer");
+          return false;
+        }
+        if (n > maxQty) {
+          Swal.showValidationMessage(`Quantity cannot exceed borrowed (${maxQty})`);
+          return false;
+        }
+        return n;
+      },
+    });
+
+    if (!isConfirmed) return;
+
+    const currentDate = dateformatter();
+    // Find target index in invoiceObject.eqdetails
+    const index = (invoiceObject?.eqdetails || []).findIndex(
+      (item) => item?.eq_id == equipment?.eq_id && item?.inveq_return_date == null
+    );
+
+    if (index === -1) return;
+
+    const updatedInvoiceObject = { ...invoiceObject };
+    const updatedEquipment = { ...updatedInvoiceObject.eqdetails[index] };
+    updatedEquipment.inveq_return_quantity = Number(qty);
+    updatedEquipment.inveq_return_date = currentDate;
+    updatedInvoiceObject.eqdetails = [...updatedInvoiceObject.eqdetails];
+    updatedInvoiceObject.eqdetails[index] = updatedEquipment;
+    setInvoiceObject(updatedInvoiceObject);
+  };
 
   return (
     <Paper
       sx={{ height: "55vh", width: "100%", p: 2, borderRadius: 4 }}
       elevation={3}
     >
-      <form noValidate onSubmit={handleSubmitId}>
+      <Box>
         <Typography>Equipment Form</Typography>
         <hr />
         {allHandedOver && (
@@ -234,150 +282,54 @@ function InvoiceHandOverForm() {
               borderRadius: 2,
               bgcolor: (theme) => theme.palette.success.light,
               color: (theme) =>
-                theme.palette.success.contrastText ||
-                theme.palette.success.dark,
+                theme.palette.success.contrastText || theme.palette.success.dark,
             }}
           >
             <InfoOutlinedIcon fontSize="small" />
-            <Typography variant="body2">
-              All the equipments are handed over.
-            </Typography>
+            <Typography variant="body2">All the equipments are handed over.</Typography>
           </Box>
         )}
         {!allHandedOver && (
-          <Box sx={{ display: "flex", height: "80px" }}>
-            <FormLabel
-              sx={{
-                pt: 2,
-                pr: 2,
-                width: "15%",
-                display: "flex",
-                justifyContent: "end",
-              }}
-              htmlFor="id"
-            >
-              ID
-            </FormLabel>
-            <TextField
-              id="id"
-              label="ID"
-              name="id"
-              disabled={allHandedOver}
-              type="text"
-              onChange={handleIdChange}
-              error={!!idErrors.id}
-              helperText={idErrors.id && idErrors.id}
-            />
-            <Button
-              sx={{ width: "20px", height: "57px" }}
-              type="submit"
-              disabled={buttonDesable || allHandedOver}
-              onClick={() => {
-                setEqName("");
-                setEqQuantity("");
-              }}
-            >
-              <YoutubeSearchedForIcon />
-            </Button>
-          </Box>
+          <Typography variant="body2" color="text.secondary">
+            Tap an equipment below to enter the handover quantity.
+          </Typography>
         )}
-      </form>
+      </Box>
       {!allHandedOver && (
-        <form noValidate onSubmit={handleSubmit}>
-          <Stack spacing={2} marginTop={2}>
-            <Box sx={{ display: "flex", height: "80px" }}>
-              <FormLabel
-                sx={{
-                  pt: 2,
-                  pr: 2,
-                  width: "17%",
-                  display: "flex",
-                  justifyContent: "end",
-                }}
-                htmlFor="name"
-              >
-                Name
-              </FormLabel>
-              <TextField
-                disabled={true}
-                fullWidth
-                id="name"
-                label={eqName || "Name"}
-                name="name"
-                type="text"
-                value={eqName}
-                onChange={handleChange}
-              />
-            </Box>
-            <Box sx={{ display: "flex", height: "80px" }}>
-              <FormLabel
-                sx={{
-                  pt: 2,
-                  pr: 2,
-                  width: "15%",
-                  display: "flex",
-                  justifyContent: "end",
-                }}
-                htmlFor="quantity"
-              >
-                Quantity
-              </FormLabel>
-              <TextField
-                fullWidth
-                disabled={addButtonDisable || !eqName || allHandedOver}
-                id="quantity"
-                label={["remaining : ", eqQuantity || "No equipment found"]}
-                name="quantity"
-                type="number"
-                onChange={handleChange}
-                error={!!eqErrors.quantity}
-                helperText={eqErrors.quantity && eqErrors.quantity}
-              />
-            </Box>
-            <Typography
-              sx={{
-                backgroundColor: (theme) => theme.palette.primary[50],
-                p: 1.3,
-                width: "180px",
-                borderRadius: 3,
-              }}
-              variant="body2"
-              color={stockTextColor}
-              textAlign={"left"}
-            >
-              Rem Borrowed Stock: {eqQuantity}
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Borrowed Equipments
+          </Typography>
+          {pendingEquipments.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No pending equipments to hand over.
             </Typography>
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "space-evenly",
-                pt: "45px",
-              }}
-            >
-              <Button
-                disabled={buttonDesable || allHandedOver}
-                sx={{ mt: 2.5 }}
-                variant="contained"
-                color="warning"
-                customvariant="custom"
-                //   onClick={handleHandover}
-                type="submit"
-              >
-                Handover
-              </Button>
-              <Button
-                disabled={buttonDesable || allHandedOver}
-                sx={{ mt: 2.5 }}
-                variant="contained"
-                color="error"
-                customvariant="custom"
-                onClick={handleReset}
-              >
-                Clear
-              </Button>
-            </Box>
-          </Stack>
-        </form>
+          ) : (
+            <Stack spacing={1}>
+              {pendingEquipments.map((eq) => (
+                <Button
+                  key={eq.eq_id}
+                  variant="outlined"
+                  fullWidth
+                  disabled={buttonDesable}
+                  onClick={() => handleEquipmentClick(eq)}
+                  sx={{
+                    justifyContent: "space-between",
+                    textTransform: "none",
+                  }}
+                >
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <Typography variant="body2">{eq.eq_name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      (ID: {eq.eq_id})
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2">Borrowed: {eq.inveq_borrowqty}</Typography>
+                </Button>
+              ))}
+            </Stack>
+          )}
+        </Box>
       )}
     </Paper>
   );

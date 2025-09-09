@@ -267,10 +267,9 @@ export function CustomerPageMiddle() {
     lname: yup.string().max(25),
     nic: yup
       .string()
-      .required()
       .transform((value) => value.trim())
       .test("is-valid-nic", "Please enter a valid NIC number", (value) => {
-        if (!value) return false;
+        if (!value) return true; // Allow empty NIC
         const nineDigitsAndV = /^[0-9]{9}v$/i;
         const twelveDigits = /^[0-9]{12}$/;
         return nineDigitsAndV.test(value) || twelveDigits.test(value);

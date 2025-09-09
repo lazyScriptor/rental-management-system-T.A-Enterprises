@@ -157,7 +157,7 @@ function InvoiceDetailsWindowDown(props) {
           invoiceObject.customerDetails.cus_id > 0
         ) {
           if (invoiceObject.eqdetails.length > 0) {
-            if (toNumber(invoiceObject.advance) > 0) {
+            if (toNumber(invoiceObject.advance) >= 0) {
               try {
                 const payload = {
                   ...invoiceObject,

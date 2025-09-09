@@ -11,6 +11,10 @@ import {
   Stack,
   TextField,
   Typography,
+  Grid,
+  Chip,
+  Divider,
+  Alert,
 } from "@mui/material";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSearch, faUpload } from "@fortawesome/free-solid-svg-icons";
@@ -269,6 +273,8 @@ function Invoice() {
     localStorage.removeItem("CIObject");
     setInvoiceSearchBtnStatus(false);
     setData(clearData);
+    setPhoneNumberorNic("");
+    setValidationMessage("");
     setEqObject("");
     clearObject();
     setPaymentArray([]);
@@ -303,6 +309,41 @@ function Invoice() {
           updateValue("payments", payment);
         });
         updateValue("customerDetails", response.data.customerDetails);
+        // Populate counts for this customer when searching by invoice ID
+        try {
+          const id = response.data.customerDetails?.cus_id;
+          if (id) {
+            try {
+              const cusInvoiceCount = await axios.get(
+                `http://localhost:8085/reports/getCustomerRatings/${id}`
+              );
+              const count =
+                cusInvoiceCount?.data?.response &&
+                Array.isArray(cusInvoiceCount.data.response) &&
+                cusInvoiceCount.data.response.length > 0
+                  ? cusInvoiceCount.data.response[0].number_of_invoices
+                  : 0;
+              setNumberOfInvoices(count ?? 0);
+            } catch (err) {
+              setNumberOfInvoices(0);
+            }
+
+            try {
+              const resIncomplete = await axios.get(
+                `http://localhost:8085/customer/incompleteInvoices/${id}`
+              );
+              setIncompleteInvoiceIds(resIncomplete.data.invoiceIds || []);
+            } catch (err) {
+              setIncompleteInvoiceIds([]);
+            }
+          } else {
+            setNumberOfInvoices(0);
+            setIncompleteInvoiceIds([]);
+          }
+        } catch (e) {
+          setNumberOfInvoices(0);
+          setIncompleteInvoiceIds([]);
+        }
         response.data.eqdetails.forEach((eqdetail) => {
           updateValue("eqdetails", eqdetail);
         });
@@ -314,13 +355,39 @@ function Invoice() {
           response.data.inv_completed_datetime
         );
         setUpdateBtnStatus(true);
-      } else if (response.status == 404) {
-        console.log("Invoice not found");
+      } else if (response.status === 404) {
+        await Swal.fire({
+          icon: "error",
+          title: "No invoice found",
+          text: `No invoice found with the number ${invoiceIdSearch}`,
+          confirmButtonText: "OK",
+        });
+        handleCreateNew();
       } else {
-        console.log("Unexpected response status:", response.status);
+        await Swal.fire({
+          icon: "error",
+          title: "Error",
+          text: `Unexpected response status: ${response.status}`,
+        });
       }
     } catch (error) {
-      console.log("Error:", error);
+      const status = error?.response?.status;
+      if (status === 404) {
+        await Swal.fire({
+          icon: "error",
+          title: "No invoice found",
+          text: `No invoice found with the number ${invoiceIdSearch}`,
+          confirmButtonText: "OK",
+        });
+        handleCreateNew();
+      } else {
+        await Swal.fire({
+          icon: "error",
+          title: "Error",
+          text: "Could not retrieve the invoice. Please try again.",
+        });
+        console.log("Error:", error);
+      }
     }
   };
 
@@ -581,24 +648,6 @@ function Invoice() {
                     <BackspaceOutlinedIcon />
                   </Button>
                   <Box flexGrow={1} />
-
-                  <Stack
-                    direction="row"
-                    alignItems="center"
-                    spacing={0.5}
-                    sx={{
-                      width: 120,
-                      color: numberOfInvoices > 5 ? "#006400" : "#717171ff",
-                    }}
-                  >
-                    <InsertDriveFileIcon
-                      fontSize="small"
-                      sx={{ mr: 0.5, mb: "2px" }}
-                    />
-                    <Typography variant="body2" component="span">
-                      {numberOfInvoices ?? ""}
-                    </Typography>
-                  </Stack>
                   <Button
                     variant="outlined"
                     sx={{
@@ -616,72 +665,91 @@ function Invoice() {
                   </Button>
                 </Box>
                 {incompleteInvoiceIds.length > 0 && (
-                  <Box mt={1}>
-                    <Typography color="error" variant="body2">
-                      Incomplete Invoice IDs: {incompleteInvoiceIds.join(", ")}
-                    </Typography>
-                  </Box>
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    Incomplete Invoice IDs: {incompleteInvoiceIds.join(", ")}
+                  </Alert>
                 )}
-                <Box>
-                  <TextField
-                    sx={[textFieldStyle]}
-                    fullWidth
-                    disabled
-                    value={
-                      invoiceObject.customerDetails.cus_fname &&
-                      invoiceObject.customerDetails.cus_lname
-                        ? `${invoiceObject.customerDetails.cus_fname} ${invoiceObject.customerDetails.cus_lname}`
-                        : invoiceObject.customerDetails.cus_fname || ""
-                    }
-                    label="Customer Full Name"
-                    variant="outlined"
-                  />
+
+                <Box sx={{ mt: 1 }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ color: "text.secondary", mb: 1 }}
+                  >
+                    Customer Details
+                  </Typography>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="caption" color="text.secondary">
+                          Full Name
+                        </Typography>
+                        <Typography variant="body1">
+                          {invoiceObject.customerDetails.cus_fname && invoiceObject.customerDetails.cus_lname
+                            ? `${invoiceObject.customerDetails.cus_fname} ${invoiceObject.customerDetails.cus_lname}`
+                            : invoiceObject.customerDetails.cus_fname || "—"}
+                        </Typography>
+                      </Grid>
+
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="caption" color="text.secondary">
+                          Phone
+                        </Typography>
+                        <Typography variant="body1">
+                          {invoiceObject.customerDetails.cus_phone_number ?? "—"}
+                        </Typography>
+                      </Grid>
+
+                      <Grid item xs={12}>
+                        <Typography variant="caption" color="text.secondary">
+                          Address
+                        </Typography>
+                        <Typography variant="body1">
+                          {invoiceObject.customerDetails.cus_address1 && invoiceObject.customerDetails.cus_address2
+                            ? `${invoiceObject.customerDetails.cus_address1} ${invoiceObject.customerDetails.cus_address2}`
+                            : invoiceObject.customerDetails.cus_address1 || "—"}
+                        </Typography>
+                      </Grid>
+
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="caption" color="text.secondary">
+                          NIC
+                        </Typography>
+                        <Typography variant="body1">
+                          {invoiceObject.customerDetails.nic ?? "—"}
+                        </Typography>
+                      </Grid>
+
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="caption" color="text.secondary">
+                          Invoices
+                        </Typography>
+                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+                          <Chip
+                            size="small"
+                            icon={<InsertDriveFileIcon fontSize="small" />}
+                            label={`Total: ${numberOfInvoices ?? 0}`}
+                            sx={{
+                              bgcolor: numberOfInvoices > 5 ? "#e6f4ea" : "#f5f5f5",
+                              color: numberOfInvoices >= 5 ? "#019301ff" : "#717171ff",
+                            }}
+                          />
+                          <Chip
+                            size="small"
+                            label={`Completed: ${Math.max((numberOfInvoices || 0) - ((incompleteInvoiceIds && incompleteInvoiceIds.length) || 0), 0)}`}
+                            variant="outlined"
+                          />
+                          <Chip
+                            size="small"
+                            label={`Pending: ${(incompleteInvoiceIds && incompleteInvoiceIds.length) || 0}`}
+                            color="warning"
+                            variant="outlined"
+                          />
+                        </Stack>
+                      </Grid>
+                    </Grid>
+                  </Paper>
                 </Box>
-                <Box>
-                  <TextField
-                    sx={[textFieldStyle]}
-                    fullWidth
-                    label="Customer Address"
-                    disabled
-                    value={
-                      invoiceObject.customerDetails.cus_address1 &&
-                      invoiceObject.customerDetails.cus_address2
-                        ? `${invoiceObject.customerDetails.cus_address1} ${invoiceObject.customerDetails.cus_address2}`
-                        : invoiceObject.customerDetails.cus_address1 || ""
-                    }
-                    variant="outlined"
-                  />
-                </Box>
-                <Box sx={{ display: "flex", gap: 4 }}>
-                  <TextField
-                    disabled
-                    label="Customer NIC"
-                    sx={[textFieldStyle]}
-                    value={
-                      invoiceObject.customerDetails.nic == undefined
-                        ? ""
-                        : invoiceObject.customerDetails.nic
-                    }
-                    variant="outlined"
-                  />
-                  <IdCardStatus />
-                </Box>
-                <Box>
-                  <TextField
-                    fullWidth
-                    disabled
-                    sx={[textFieldStyle]}
-                    value={
-                      invoiceObject.customerDetails.cus_phone_number ==
-                      undefined
-                        ? ""
-                        : invoiceObject.customerDetails.cus_phone_number
-                    }
-                    id="outlined-basic"
-                    label="Customer Phone number"
-                    variant="outlined"
-                  />
-                </Box>
+
                 <Box
                   sx={{
                     display: "flex",
@@ -698,6 +766,7 @@ function Invoice() {
                   >
                     Payments
                   </Button>
+                  <IdCardStatus />
                   {invoiceSearchBtnStatus && <FeedbackComponent />}
                 </Box>
               </Box>
