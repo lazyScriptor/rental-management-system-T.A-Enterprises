@@ -421,18 +421,7 @@ const InvoiceDetailsWindowDown = forwardRef(function InvoiceDetailsWindowDown(
           height: "80%",
         }}
       >
-        {isCompleted && (
-          <Chip
-            size="small"
-            color="success"
-            icon={<TaskAltOutlinedIcon sx={{ fontSize: 16 }} />}
-            label={`Completed • ${new Date(
-              invoiceObject.inv_completed_datetime
-            ).toLocaleString()}`}
-            sx={{ position: "absolute", top: 8, right: 8 }}
-          />
-        )}
-
+       
         <Box position="absolute" bottom={8} width="100%" pr={2}>
           {invoiceSearchBtnStatus && (
             <Stack
@@ -590,6 +579,18 @@ const InvoiceDetailsWindowDown = forwardRef(function InvoiceDetailsWindowDown(
           </Box>
         </Box>
       </Paper>
+
+ {isCompleted && (
+          <Chip
+            size="small"
+            color="success"
+            icon={<TaskAltOutlinedIcon sx={{ fontSize: 16 }} />}
+            label={`Completed • ${new Date(
+              invoiceObject.inv_completed_datetime
+            ).toLocaleString()}`}
+            sx={{ position: "", top: 8, right: 8 }}
+          />
+        )}
 
       {/* Footer actions */}
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>

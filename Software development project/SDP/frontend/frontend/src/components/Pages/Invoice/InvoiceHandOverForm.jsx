@@ -26,17 +26,6 @@ function InvoiceHandOverForm() {
   const [addButtonDisable, setAddButtonDisable] = useState(false);
   const [stockTextColor, setStockTextColor] = useState("black");
 
-  function dateformatter() {
-    const createdDate = new Date();
-    const year = createdDate.getFullYear();
-    const month = String(createdDate.getMonth() + 1).padStart(2, "0");
-    const day = String(createdDate.getDate()).padStart(2, "0");
-    const hours = String(createdDate.getHours()).padStart(2, "0");
-    const minutes = String(createdDate.getMinutes()).padStart(2, "0");
-    const seconds = String(createdDate.getSeconds()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-  }
-
   const {
     responseManageToogle,
     setResponseManageToogle,
@@ -52,21 +41,33 @@ function InvoiceHandOverForm() {
     clearObject,
   } = useContext(InvoiceContext);
 
+  // Treat common "empty" values as not-returned
+  const isNullishDate = (val) => {
+    if (val == null) return true; // null or undefined
+    if (typeof val === "string") {
+      const v = val.trim().toLowerCase();
+      // Backends sometimes send "", "null", "undefined" or MySQL zero-date
+      if (v === "" || v === "null" || v === "undefined" || v === "0000-00-00 00:00:00") return true;
+    }
+    return false;
+  };
+
+  // A line-item is considered "returned/handed-over" only when there is a positive return quantity AND a valid return date
+  const isReturned = (item) => {
+    const qty = Number(item?.inveq_return_quantity || 0);
+    const dt = item?.inveq_return_date;
+    return qty > 0 && !isNullishDate(dt);
+  };
+
   const pendingEquipments = React.useMemo(() => {
     const list = invoiceObject?.eqdetails || [];
-    return Array.isArray(list)
-      ? list.filter((item) => item?.inveq_return_date == null)
-      : [];
+    return Array.isArray(list) ? list.filter((item) => !isReturned(item)) : [];
   }, [invoiceObject]);
 
   const allHandedOver = React.useMemo(() => {
     const list = invoiceObject?.eqdetails || [];
     if (!Array.isArray(list) || list.length === 0) return false;
-    return list.every(
-      (item) =>
-        Number(item?.inveq_return_quantity || 0) > 0 ||
-        item?.inveq_return_date != null
-    );
+    return list.every(isReturned);
   }, [invoiceObject]);
 
   useEffect(() => {
@@ -109,10 +110,10 @@ function InvoiceHandOverForm() {
     setIdErrors(validationErrors);
 
     if (Object.keys(validationErrors).length === 0) {
-      const equipment = invoiceObject.eqdetails.find(
+      const equipment = (invoiceObject?.eqdetails || []).find(
         (item) =>
-          item.eq_id == parseInt(idFormData.id.trim()) &&
-          item.inveq_return_date == null
+          item?.eq_id == parseInt(idFormData.id.trim(), 10) &&
+          !isReturned(item)
       );
       if (equipment) {
         setEqName(equipment.eq_name);
@@ -161,10 +162,10 @@ function InvoiceHandOverForm() {
     if (Object.keys(validationErrors).length === 0) {
       const currentDate = dateformatter();
 
-      const index = invoiceObject.eqdetails.findIndex(
+      const index = (invoiceObject?.eqdetails || []).findIndex(
         (item) =>
-          item.eq_id == parseInt(idFormData.id.trim()) &&
-          item.inveq_return_quantity == 0
+          item?.eq_id == parseInt(idFormData.id.trim(), 10) &&
+          !isReturned(item)
       );
 
       if (index !== -1) {
@@ -213,7 +214,7 @@ function InvoiceHandOverForm() {
 
     const currentDate = dateformatter();
     const index = (invoiceObject?.eqdetails || []).findIndex(
-      (item) => item?.eq_id == equipment?.eq_id && item?.inveq_return_date == null
+      (item) => item?.eq_id == equipment?.eq_id && !isReturned(item)
     );
 
     if (index === -1) return;
@@ -226,6 +227,17 @@ function InvoiceHandOverForm() {
     updatedInvoiceObject.eqdetails[index] = updatedEquipment;
     setInvoiceObject(updatedInvoiceObject);
   };
+
+  function dateformatter() {
+    const createdDate = new Date();
+    const year = createdDate.getFullYear();
+    const month = String(createdDate.getMonth() + 1).padStart(2, "0");
+    const day = String(createdDate.getDate()).padStart(2, "0");
+    const hours = String(createdDate.getHours()).padStart(2, "0");
+    const minutes = String(createdDate.getMinutes()).padStart(2, "0");
+    const seconds = String(createdDate.getSeconds()).padStart(2, "0");
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
 
   return (
     <Paper sx={{ height: "55vh", width: "100%", p: 2, borderRadius: 4 }} elevation={3}>
@@ -247,7 +259,7 @@ function InvoiceHandOverForm() {
             }}
           >
             <InfoOutlinedIcon fontSize="small" />
-            <Typography variant="body2">All the equipments are handed over.</Typography>
+            <Typography variant="body2">All equipment lines are marked as handed over.</Typography>
           </Box>
         )}
         {!allHandedOver && (

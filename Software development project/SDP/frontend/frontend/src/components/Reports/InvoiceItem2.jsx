@@ -11,42 +11,90 @@ import {
   TableRow,
   Button,
   Typography,
-  TableSortLabel,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   Stack,
   Chip,
+  TablePagination,
+  Divider,
+  Card,
+  CardContent,
 } from "@mui/material";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { LocalizationProvider, DateTimePicker } from "@mui/x-date-pickers";
-import TablePagination from "@mui/material/TablePagination";
 import axios from "axios";
 import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
+
+// Icons
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
+import FilterAltIcon from "@mui/icons-material/FilterAlt";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
 
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
 
 const rowsPerPageOptions = [10, 25, 50, 100];
 
-// Helper: LKR currency (no decimals typical for receipts)
+// LKR currency (no decimals typical for receipts)
 const fmtLKR = new Intl.NumberFormat("en-LK", {
   style: "currency",
   currency: "LKR",
   maximumFractionDigits: 0,
 });
 
-function InvoiceItem2() {
+// ---- pricing helpers (match CompleteInvoiceTable) ----
+const n = (v) => Number(v) || 0;
+
+/** 24h-precise duration (ceil), min 1 day */
+function days24hCeil(startISO, endISO = new Date()) {
+  const s = dayjs(startISO);
+  const e = dayjs(endISO);
+  if (!s.isValid() || !e.isValid()) return 1;
+  const ms = e.valueOf() - s.valueOf();
+  if (!Number.isFinite(ms) || ms <= 0) return 1;
+  const days = ms / (1000 * 60 * 60 * 24);
+  return Math.max(1, Math.ceil(days - 1e-9));
+}
+
+/**
+ * Pricing – mirrors CompleteInvoiceTable:
+ * - If there is a special (spe_singleday_rent) and a dataset (eqcat_dataset),
+ *   charge special once for the first `dataset` days, then normal per extra day.
+ * - Otherwise charge normal per day.
+ */
+function calcRentalForDuration(row, durationDays) {
+  const dateSet = n(row.eqcat_dataset);
+  const normalRental = n(row.eq_rental);
+  const specialRental = n(row.spe_singleday_rent);
+  const qty = n(row.inveq_borrowqty);
+  const d = n(durationDays);
+
+  if (d <= 0 || qty <= 0) return 0;
+
+  if (specialRental) {
+    if (d <= dateSet) {
+      return specialRental * qty;
+    }
+    return (specialRental + normalRental * (d - dateSet)) * qty;
+  }
+  return normalRental * d * qty;
+}
+
+export default function InvoiceItem2() {
   const [raw, setRaw] = useState([]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
   // Filters
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
+  const [createdStart, setCreatedStart] = useState(null);
+  const [createdEnd, setCreatedEnd] = useState(null);
+  const [completedStart, setCompletedStart] = useState(null);
+  const [completedEnd, setCompletedEnd] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [invoiceIdSearch, setInvoiceIdSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | completed | incomplete
@@ -55,31 +103,223 @@ function InvoiceItem2() {
   const [sortBy, setSortBy] = useState("inv_createddate");
   const [sortOrder, setSortOrder] = useState("desc"); // asc | desc
 
-  // Fetch once; keep all client-side transforms local
+  // Per-invoice detail maps
+  const [returnedCostMap, setReturnedCostMap] = useState({});  // cost for items with return date
+  const [ongoingCostMap, setOngoingCostMap] = useState({});    // cost till now for items not yet returned
+  const [advanceMap, setAdvanceMap] = useState({});            // invoice.advance
+  const [discountMap, setDiscountMap] = useState({});          // invoice.discount (in case combined rows lack/are stale)
+  const [refundsMap, setRefundsMap] = useState({});            // sum(|negative payments|)
+
+  // Fetch combined report
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const res = await axios.get(
-          "http://localhost:8085/reports/getCombinedInvoiceReports"
-        );
+        const res = await axios.get("http://localhost:8085/reports/getCombinedInvoiceReports");
         if (mounted && res?.data?.status) {
-          setRaw(Array.isArray(res.data.response) ? res.data.response : []);
+          const arr = Array.isArray(res.data.response) ? res.data.response : [];
+          setRaw(arr);
         }
       } catch (e) {
         console.error("Failed to fetch combined invoice reports", e);
         setRaw([]);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  // Reset to first page when filters/sort change
+  // Base filtering
+  const filtered = useMemo(() => {
+    const cStart = createdStart ? dayjs(createdStart) : null;
+    const cEnd = createdEnd ? dayjs(createdEnd) : null;
+    const fStart = completedStart ? dayjs(completedStart) : null;
+    const fEnd = completedEnd ? dayjs(completedEnd) : null;
+
+    return (raw || [])
+      .filter((r) => r.customer_name)
+      .filter((r) => {
+        const d = dayjs(r.inv_createddate);
+        const afterOk = !cStart || d.isSameOrAfter(cStart);
+        const beforeOk = !cEnd || d.isSameOrBefore(cEnd);
+        return afterOk && beforeOk;
+      })
+      .filter((r) => r.customer_name.toLowerCase().includes(customerSearch.toLowerCase()))
+      .filter((r) => String(r.invoice_id ?? "").includes(invoiceIdSearch.trim()))
+      .filter((r) => {
+        if (statusFilter === "completed") return !!r.inv_completed_datetime;
+        if (statusFilter === "incomplete") return !r.inv_completed_datetime;
+        return true;
+      })
+      .filter((r) => {
+        if (!fStart && !fEnd) return true;
+        if (!r.inv_completed_datetime) return false;
+        const d = dayjs(r.inv_completed_datetime);
+        const afterOk = !fStart || d.isSameOrAfter(fStart);
+        const beforeOk = !fEnd || d.isSameOrBefore(fEnd);
+        return afterOk && beforeOk;
+      });
+  }, [
+    raw,
+    createdStart,
+    createdEnd,
+    completedStart,
+    completedEnd,
+    customerSearch,
+    invoiceIdSearch,
+    statusFilter,
+  ]);
+
+  // Sorting helpers
+  const getSortValue = useCallback((row, key) => {
+    switch (key) {
+      case "invoice_id":
+        return Number(row.invoice_id) || 0;
+      case "customer_name":
+        return row.customer_name?.toLowerCase?.() || "";
+      case "inv_createddate":
+        return dayjs(row.inv_createddate).valueOf();
+      case "inv_completed_datetime":
+        return row.inv_completed_datetime ? dayjs(row.inv_completed_datetime).valueOf() : -Infinity;
+      default:
+        return 0;
+    }
+  }, []);
+
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      const va = getSortValue(a, sortBy);
+      const vb = getSortValue(b, sortBy);
+      if (va < vb) return sortOrder === "asc" ? -1 : 1;
+      if (va > vb) return sortOrder === "asc" ? 1 : -1;
+      // tie-break: created desc
+      return dayjs(b.inv_createddate).valueOf() - dayjs(a.inv_createddate).valueOf();
+    });
+    return copy;
+  }, [filtered, sortBy, sortOrder, getSortValue]);
+
+  const paged = useMemo(() => {
+    if (rowsPerPage <= 0) return sorted;
+    const start = page * rowsPerPage;
+    return sorted.slice(start, start + rowsPerPage);
+  }, [sorted, page, rowsPerPage]);
+
+  // Reset page when filters/sort change
+  useEffect(() => { setPage(0); }, [
+    createdStart, createdEnd, completedStart, completedEnd,
+    customerSearch, invoiceIdSearch, statusFilter, sortBy, sortOrder
+  ]);
+
+  // Load per-invoice details for *filtered* invoices
   useEffect(() => {
-    setPage(0);
-  }, [startDate, endDate, customerSearch, invoiceIdSearch, statusFilter, sortBy, sortOrder]);
+    let cancelled = false;
+
+    const run = async () => {
+      const ids = filtered.map((r) => r.invoice_id);
+      if (ids.length === 0) {
+        if (!cancelled) {
+          setReturnedCostMap({});
+          setOngoingCostMap({});
+          setAdvanceMap({});
+          setDiscountMap({});
+          setRefundsMap({});
+        }
+        return;
+      }
+
+      const retAcc = {};
+      const ongAcc = {};
+      const advAcc = {};
+      const disAcc = {};
+      const refAcc = {};
+
+      // Batch in parallel, but keep it simple
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const resp = await axios.get(`http://localhost:8085/invoiceDataRetrieve/${id}`);
+            const eqs = resp?.data?.eqdetails || [];
+            const invCreated = resp?.data?.createdDate;
+            const discount = Number(resp?.data?.discount || 0);
+            const advance = Number(resp?.data?.advance || 0);
+            const pays = Array.isArray(resp?.data?.payments) ? resp.data.payments : [];
+
+            // refunds = total of |negative amounts|
+            const refunds = pays.reduce((acc, p) => {
+              const a = Number(p.invpay_amount) || 0;
+              return a < 0 ? acc + Math.abs(a) : acc;
+            }, 0);
+
+            let returnedSum = 0;
+            let ongoingSum = 0;
+
+            for (const row of eqs) {
+              const start = row.inveq_borrowdate || invCreated;
+              if (row.inveq_return_date) {
+                const d = days24hCeil(start, row.inveq_return_date);
+                returnedSum += calcRentalForDuration(row, d);
+              } else {
+                const d = days24hCeil(start, new Date());
+                ongoingSum += calcRentalForDuration(row, d);
+              }
+            }
+
+            retAcc[id] = returnedSum;
+            ongAcc[id] = ongoingSum;
+            advAcc[id] = advance;
+            disAcc[id] = discount;
+            refAcc[id] = refunds;
+          } catch (err) {
+            // Fall back to zero on error
+            retAcc[id] = 0;
+            ongAcc[id] = 0;
+            advAcc[id] = 0;
+            disAcc[id] = 0;
+            refAcc[id] = 0;
+            console.warn("Invoice detail fetch failed for", id, err);
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setReturnedCostMap(retAcc);
+        setOngoingCostMap(ongAcc);
+        setAdvanceMap(advAcc);
+        setDiscountMap(disAcc);
+        setRefundsMap(refAcc);
+      }
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [filtered]);
+
+  // SUMMARY across filtered
+  const summary = useMemo(() => {
+    const ids = filtered.map((r) => r.invoice_id);
+
+    const sumReturned = ids.reduce((acc, id) => acc + (returnedCostMap[id] ?? 0), 0);
+    const sumOngoing  = ids.reduce((acc, id) => acc + (ongoingCostMap[id] ?? 0), 0);
+    const equipTotal  = sumReturned + sumOngoing;
+
+    const sumDiscounts = ids.reduce((acc, id) => acc + (discountMap[id] ?? 0), 0);
+    const sumAdvances  = ids.reduce((acc, id) => acc + (advanceMap[id] ?? 0), 0);
+    const sumRefunds   = ids.reduce((acc, id) => acc + (refundsMap[id] ?? 0), 0); // already absolute
+
+    // Per your request: "complete cost after refunds, advance, discounts"
+    const netAfterAdj = equipTotal - sumDiscounts - sumAdvances + sumRefunds;
+
+    return {
+      count: filtered.length,
+      sumReturned,
+      sumOngoing,
+      equipTotal,
+      sumDiscounts,
+      sumAdvances,
+      sumRefunds,
+      netAfterAdj,
+    };
+  }, [filtered, returnedCostMap, ongoingCostMap, discountMap, advanceMap, refundsMap]);
 
   const handleRequestSort = (columnKey) => {
     if (sortBy === columnKey) {
@@ -97,140 +337,14 @@ function InvoiceItem2() {
   };
 
   const clearFilters = () => {
-    setStartDate(null);
-    setEndDate(null);
+    setCreatedStart(null);
+    setCreatedEnd(null);
+    setCompletedStart(null);
+    setCompletedEnd(null);
     setCustomerSearch("");
     setInvoiceIdSearch("");
     setStatusFilter("all");
   };
-
-  // Derived: filter
-  const filtered = useMemo(() => {
-    const start = startDate ? dayjs(startDate) : null;
-    const end = endDate ? dayjs(endDate) : null;
-
-    return (raw || [])
-      .filter((row) => row.customer_name) // keep rows with a customer
-      .filter((row) => {
-        // Date range filter on created date
-        const created = dayjs(row.inv_createddate);
-        const afterOk = !start || created.isSameOrAfter(start);
-        const beforeOk = !end || created.isSameOrBefore(end);
-        return afterOk && beforeOk;
-      })
-      .filter((row) =>
-        row.customer_name.toLowerCase().includes(customerSearch.toLowerCase())
-      )
-      .filter((row) => String(row.invoice_id).includes(invoiceIdSearch))
-      .filter((row) => {
-        if (statusFilter === "completed") return !!row.inv_completed_datetime;
-        if (statusFilter === "incomplete") return !row.inv_completed_datetime;
-        return true; // all
-      });
-  }, [raw, startDate, endDate, customerSearch, invoiceIdSearch, statusFilter]);
-
-  // Derived: sort
-  const getSortValue = useCallback(
-    (row, key) => {
-      switch (key) {
-        case "invoice_id":
-          return Number(row.invoice_id) || 0;
-        case "customer_name":
-          return row.customer_name?.toLowerCase?.() || "";
-        case "inv_createddate":
-          return dayjs(row.inv_createddate).valueOf();
-        case "inv_completed_datetime":
-          // treat null as very small for asc order (incomplete first)
-          return row.inv_completed_datetime
-            ? dayjs(row.inv_completed_datetime).valueOf()
-            : -Infinity;
-        case "total_revenue":
-          // payments received
-          return Number(row.total_revenue) || 0;
-        case "total_income":
-          // invoice total before discount
-          return Number(row.total_income) || 0;
-        case "discount":
-          return Number(row.discount) || 0;
-        case "final_total": {
-          const income = Number(row.total_income) || 0;
-          const disc = Number(row.discount) || 0;
-          return Math.max(0, income - disc);
-        }
-        case "balance_due": {
-          const income = Number(row.total_income) || 0;
-          const disc = Number(row.discount) || 0;
-          const finalTotal = Math.max(0, income - disc);
-          const paid = Number(row.total_revenue) || 0;
-          return Math.max(0, finalTotal - paid);
-        }
-        case "status":
-          return row.inv_completed_datetime ? 1 : 0; // 0=incomplete, 1=completed
-        default:
-          return 0;
-      }
-    },
-    []
-  );
-
-  const sorted = useMemo(() => {
-    const copy = [...filtered];
-    copy.sort((a, b) => {
-      const va = getSortValue(a, sortBy);
-      const vb = getSortValue(b, sortBy);
-      if (va < vb) return sortOrder === "asc" ? -1 : 1;
-      if (va > vb) return sortOrder === "asc" ? 1 : -1;
-      // tie-breaker: created date desc
-      const ta = dayjs(a.inv_createddate).valueOf();
-      const tb = dayjs(b.inv_createddate).valueOf();
-      return tb - ta;
-    });
-    return copy;
-  }, [filtered, sortBy, sortOrder, getSortValue]);
-
-  // Derived: pagination
-  const paged = useMemo(() => {
-    if (rowsPerPage <= 0) return sorted;
-    const start = page * rowsPerPage;
-    return sorted.slice(start, start + rowsPerPage);
-  }, [sorted, page, rowsPerPage]);
-
-  // Summary (for filtered set, not just paged rows)
-  const summary = useMemo(() => {
-    const totalRows = filtered.length;
-    const completedCount = filtered.filter((r) => !!r.inv_completed_datetime).length;
-    const incompleteCount = totalRows - completedCount;
-
-    const sumIncomeBefore = filtered.reduce(
-      (acc, r) => acc + (Number(r.total_income) || 0),
-      0
-    );
-    const sumDiscounts = filtered.reduce(
-      (acc, r) => acc + (Number(r.discount) || 0),
-      0
-    );
-    const sumFinal = filtered.reduce((acc, r) => {
-      const income = Number(r.total_income) || 0;
-      const disc = Number(r.discount) || 0;
-      return acc + Math.max(0, income - disc);
-    }, 0);
-    const sumPayments = filtered.reduce(
-      (acc, r) => acc + (Number(r.total_revenue) || 0),
-      0
-    );
-    const sumBalance = Math.max(0, sumFinal - sumPayments);
-
-    return {
-      totalRows,
-      completedCount,
-      incompleteCount,
-      sumIncomeBefore,
-      sumDiscounts,
-      sumFinal,
-      sumPayments,
-      sumBalance,
-    };
-  }, [filtered]);
 
   return (
     <Box>
@@ -238,93 +352,102 @@ function InvoiceItem2() {
         Invoice Reports
       </Typography>
 
-      {/* Controls */}
-      <Stack
-        direction="row"
-        spacing={2}
-        alignItems="center"
-        flexWrap="wrap"
-        sx={{ mb: 2 }}
-      >
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <DateTimePicker
-            label="Start Date & Time"
-            value={startDate}
-            onChange={setStartDate}
-            slotProps={{ textField: { size: "small" } }}
+      {/* Filters */}
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+          <FilterAltIcon fontSize="small" />
+          <Typography variant="subtitle2">Filters</Typography>
+          <Box flexGrow={1} />
+          <Button startIcon={<RestartAltIcon />} variant="text" color="inherit" onClick={clearFilters}>
+            Reset
+          </Button>
+        </Stack>
+
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 1.5 }}>
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DateTimePicker
+              label="Created Start"
+              value={createdStart}
+              onChange={setCreatedStart}
+              slotProps={{ textField: { size: "small" } }}
+            />
+          </LocalizationProvider>
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DateTimePicker
+              label="Created End"
+              value={createdEnd}
+              onChange={setCreatedEnd}
+              slotProps={{ textField: { size: "small" } }}
+            />
+          </LocalizationProvider>
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DateTimePicker
+              label="Completed Start"
+              value={completedStart}
+              onChange={setCompletedStart}
+              slotProps={{ textField: { size: "small" } }}
+            />
+          </LocalizationProvider>
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DateTimePicker
+              label="Completed End"
+              value={completedEnd}
+              onChange={setCompletedEnd}
+              slotProps={{ textField: { size: "small" } }}
+            />
+          </LocalizationProvider>
+        </Stack>
+
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          <TextField
+            label="Search Customer"
+            variant="outlined"
+            size="small"
+            value={customerSearch}
+            onChange={(e) => setCustomerSearch(e.target.value)}
           />
-        </LocalizationProvider>
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <DateTimePicker
-            label="End Date & Time"
-            value={endDate}
-            onChange={setEndDate}
-            slotProps={{ textField: { size: "small" } }}
+          <TextField
+            label="Search Invoice ID"
+            variant="outlined"
+            size="small"
+            value={invoiceIdSearch}
+            onChange={(e) => setInvoiceIdSearch(e.target.value)}
           />
-        </LocalizationProvider>
 
-        <TextField
-          label="Search Customer"
-          variant="outlined"
-          size="small"
-          value={customerSearch}
-          onChange={(e) => setCustomerSearch(e.target.value)}
-        />
-        <TextField
-          label="Search Invoice ID"
-          variant="outlined"
-          size="small"
-          value={invoiceIdSearch}
-          onChange={(e) => setInvoiceIdSearch(e.target.value)}
-        />
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel id="status-filter-label">Status Filter</InputLabel>
+            <Select
+              labelId="status-filter-label"
+              label="Status Filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="completed">Completed Only</MenuItem>
+              <MenuItem value="incomplete">Incomplete Only</MenuItem>
+            </Select>
+          </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel id="status-filter-label">Status Filter</InputLabel>
-          <Select
-            labelId="status-filter-label"
-            label="Status Filter"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <MenuItem value="all">All</MenuItem>
-            <MenuItem value="completed">Completed Only</MenuItem>
-            <MenuItem value="incomplete">Incomplete Only</MenuItem>
-          </Select>
-        </FormControl>
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel id="sort-by-label">Sort By</InputLabel>
+            <Select
+              labelId="sort-by-label"
+              label="Sort By"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <MenuItem value="inv_createddate">Created Date</MenuItem>
+              <MenuItem value="inv_completed_datetime">Completed Date</MenuItem>
+              <MenuItem value="invoice_id">Invoice ID</MenuItem>
+              <MenuItem value="customer_name">Customer Name</MenuItem>
+            </Select>
+          </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel id="sort-by-label">Sort By</InputLabel>
-          <Select
-            labelId="sort-by-label"
-            label="Sort By"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <MenuItem value="status">Status (Completed/Incomplete)</MenuItem>
-            <MenuItem value="inv_createddate">Created Date</MenuItem>
-            <MenuItem value="inv_completed_datetime">Completed Date</MenuItem>
-            <MenuItem value="total_revenue">Payments Received (LKR)</MenuItem>
-            <MenuItem value="total_income">Invoice Total (LKR)</MenuItem>
-            <MenuItem value="discount">Discount (LKR)</MenuItem>
-            <MenuItem value="final_total">Final Total (LKR)</MenuItem>
-            <MenuItem value="balance_due">Balance Due (LKR)</MenuItem>
-            <MenuItem value="invoice_id">Invoice ID</MenuItem>
-            <MenuItem value="customer_name">Customer Name</MenuItem>
-          </Select>
-        </FormControl>
-
-        <Button
-          variant="outlined"
-          onClick={() => setSortOrder((p) => (p === "asc" ? "desc" : "asc"))}
-        >
-          Order: {sortOrder.toUpperCase()}
-        </Button>
-
-        <Box flexGrow={1} />
-        <Button variant="contained" color="error" onClick={clearFilters}>
-          Clear Filters
-        </Button>
-      </Stack>
+          <Button variant="outlined" onClick={() => setSortOrder((p) => (p === "asc" ? "desc" : "asc"))}>
+            Order: {sortOrder.toUpperCase()}
+          </Button>
+        </Stack>
+      </Paper>
 
       {/* Table */}
       <TableContainer component={Paper}>
@@ -332,151 +455,107 @@ function InvoiceItem2() {
           <TableHead>
             <TableRow>
               <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "invoice_id"}
-                  direction={sortOrder}
+                <Button
                   onClick={() => handleRequestSort("invoice_id")}
+                  size="small"
+                  variant={sortBy === "invoice_id" ? "contained" : "text"}
                 >
                   Invoice ID
-                </TableSortLabel>
+                </Button>
               </TableCell>
               <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "customer_name"}
-                  direction={sortOrder}
+                <Button
                   onClick={() => handleRequestSort("customer_name")}
+                  size="small"
+                  variant={sortBy === "customer_name" ? "contained" : "text"}
                 >
-                  Customer Name
-                </TableSortLabel>
+                  Customer
+                </Button>
               </TableCell>
               <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "status"}
-                  direction={sortOrder}
-                  onClick={() => handleRequestSort("status")}
-                >
-                  Status
-                </TableSortLabel>
-              </TableCell>
-              <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "inv_createddate"}
-                  direction={sortOrder}
+                <Button
                   onClick={() => handleRequestSort("inv_createddate")}
+                  size="small"
+                  variant={sortBy === "inv_createddate" ? "contained" : "text"}
                 >
-                  Created Date
-                </TableSortLabel>
+                  Created
+                </Button>
               </TableCell>
               <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "total_revenue"}
-                  direction={sortOrder}
-                  onClick={() => handleRequestSort("total_revenue")}
-                >
-                  Payments Received (LKR)
-                </TableSortLabel>
+                Status
               </TableCell>
+              <TableCell align="center">Returned Cost</TableCell>
+              <TableCell align="center">Not Returned Cost</TableCell>
+              <TableCell align="center">Equipment Total</TableCell>
+              <TableCell align="center">Discount</TableCell>
+              <TableCell align="center">Advance</TableCell>
+              <TableCell align="center">Refunds</TableCell>
               <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "total_income"}
-                  direction={sortOrder}
-                  onClick={() => handleRequestSort("total_income")}
-                >
-                  Invoice Total (LKR)
-                </TableSortLabel>
-              </TableCell>
-              <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "discount"}
-                  direction={sortOrder}
-                  onClick={() => handleRequestSort("discount")}
-                >
-                  Discount (LKR)
-                </TableSortLabel>
-              </TableCell>
-              <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "final_total"}
-                  direction={sortOrder}
-                  onClick={() => handleRequestSort("final_total")}
-                >
-                  Final Total (LKR)
-                </TableSortLabel>
-              </TableCell>
-              <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "balance_due"}
-                  direction={sortOrder}
-                  onClick={() => handleRequestSort("balance_due")}
-                >
-                  Balance Due (LKR)
-                </TableSortLabel>
-              </TableCell>
-              <TableCell align="center">
-                <TableSortLabel
-                  active={sortBy === "inv_completed_datetime"}
-                  direction={sortOrder}
+                <Button
                   onClick={() => handleRequestSort("inv_completed_datetime")}
+                  size="small"
+                  variant={sortBy === "inv_completed_datetime" ? "contained" : "text"}
                 >
-                  Completed Date & Time
-                </TableSortLabel>
+                  Completed
+                </Button>
               </TableCell>
             </TableRow>
           </TableHead>
 
           <TableBody>
             {paged.map((row) => {
+              const id = row.invoice_id;
               const isCompleted = !!row.inv_completed_datetime;
 
-              // Row-level derived values
-              const income = Number(row.total_income || 0);
-              const discount = Number(row.discount || 0);
-              const finalTotal = Math.max(0, income - discount);
-              const paid = Number(row.total_revenue || 0);
-              const balanceDue = Math.max(0, finalTotal - paid);
-
-              const statusChip = (
-                <Chip
-                  size="small"
-                  label={isCompleted ? "Completed" : "In Progress"}
-                  color={isCompleted ? "success" : "warning"}
-                  variant="outlined"
-                />
-              );
+              const returned = returnedCostMap[id] ?? 0;
+              const ongoing  = ongoingCostMap[id] ?? 0;
+              const equip    = returned + ongoing;
+              const discount = discountMap[id] ?? n(row.discount); // prefer live, fallback row
+              const advance  = advanceMap[id] ?? 0;
+              const refunds  = refundsMap[id] ?? 0;
 
               return (
                 <TableRow
                   key={`${row.invoice_id}-${row.inv_createddate}`}
                   sx={{
-                    backgroundColor: isCompleted ? "#E8F5E9" : "#FFF3E0",
+                    backgroundColor: isCompleted
+                      ? "rgba(46, 125, 50, 0.03)"
+                      : "rgba(255, 167, 38, 0.03)",
                   }}
                 >
                   <TableCell align="center">{row.invoice_id}</TableCell>
                   <TableCell align="center">{row.customer_name}</TableCell>
-                  <TableCell align="center">{statusChip}</TableCell>
                   <TableCell align="center">
-                    {dayjs(row.inv_createddate).format("YYYY-MM-DD HH:mm:ss")}
+                    {dayjs(row.inv_createddate).format("YYYY-MM-DD HH:mm")}
                   </TableCell>
                   <TableCell align="center">
-                    {fmtLKR.format(paid)}
+                    {isCompleted ? (
+                      <Chip
+                        size="small"
+                        label="Completed"
+                        color="success"
+                        variant="outlined"
+                        icon={<CheckCircleOutlineIcon fontSize="small" />}
+                      />
+                    ) : (
+                      <Chip
+                        size="small"
+                        label="In Progress"
+                        color="warning"
+                        variant="outlined"
+                        icon={<HourglassEmptyIcon fontSize="small" />}
+                      />
+                    )}
                   </TableCell>
-                  <TableCell align="center">
-                    {fmtLKR.format(income)}
-                  </TableCell>
-                  <TableCell align="center">
-                    {fmtLKR.format(discount)}
-                  </TableCell>
-                  <TableCell align="center">
-                    {fmtLKR.format(finalTotal)}
-                  </TableCell>
-                  <TableCell align="center">
-                    {fmtLKR.format(balanceDue)}
-                  </TableCell>
+                  <TableCell align="center">{fmtLKR.format(returned)}</TableCell>
+                  <TableCell align="center">{fmtLKR.format(ongoing)}</TableCell>
+                  <TableCell align="center">{fmtLKR.format(equip)}</TableCell>
+                  <TableCell align="center">{fmtLKR.format(discount)}</TableCell>
+                  <TableCell align="center">{fmtLKR.format(advance)}</TableCell>
+                  <TableCell align="center">{fmtLKR.format(refunds)}</TableCell>
                   <TableCell align="center">
                     {row.inv_completed_datetime
-                      ? dayjs(row.inv_completed_datetime).format(
-                          "YYYY-MM-DD HH:mm:ss"
-                        )
+                      ? dayjs(row.inv_completed_datetime).format("YYYY-MM-DD HH:mm")
                       : "—"}
                   </TableCell>
                 </TableRow>
@@ -498,39 +577,31 @@ function InvoiceItem2() {
       />
 
       {/* Summary */}
-      <Paper sx={{ p: 2, mt: 2 }}>
-        <Typography variant="body2">
-          Showing <strong>{Math.min(filtered.length, page * rowsPerPage + 1)}</strong>
-          –
-          <strong>{Math.min(filtered.length, (page + 1) * rowsPerPage)}</strong>{" "}
-          of <strong>{filtered.length}</strong> invoices
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Completed: <strong>{summary.completedCount}</strong> • Incomplete:{" "}
-          <strong>{summary.incompleteCount}</strong>
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Invoice Totals (before discount):{" "}
-          <strong>{fmtLKR.format(summary.sumIncomeBefore)}</strong>
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Discounts (filtered):{" "}
-          <strong>{fmtLKR.format(summary.sumDiscounts)}</strong>
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Final Invoice Totals:{" "}
-          <strong>{fmtLKR.format(summary.sumFinal)}</strong>
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Payments Received:{" "}
-          <strong>{fmtLKR.format(summary.sumPayments)}</strong>
-        </Typography>
-        <Typography variant="body2" sx={{ mt: 0.5 }}>
-          Balance Due: <strong>{fmtLKR.format(summary.sumBalance)}</strong>
-        </Typography>
-      </Paper>
+      <Card variant="outlined" sx={{ mt: 2 }}>
+        <CardContent>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>
+            Summary (filtered)
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Chip size="small" variant="outlined" label={`Invoices: ${summary.count}`} />
+            <Chip size="small" variant="outlined" label={`Handed-over items total: ${fmtLKR.format(summary.sumReturned)}`} />
+            <Chip size="small" variant="outlined" label={`Not handed-over items total: ${fmtLKR.format(summary.sumOngoing)}`} />
+            <Chip size="small" color="info" variant="outlined" label={`Equipment total: ${fmtLKR.format(summary.equipTotal)}`} />
+            <Chip size="small" variant="outlined" label={`Discounts: ${fmtLKR.format(summary.sumDiscounts)}`} />
+            <Chip size="small" variant="outlined" label={`Advances: ${fmtLKR.format(summary.sumAdvances)}`} />
+            <Chip size="small" variant="outlined" label={`Refunds: ${fmtLKR.format(summary.sumRefunds)}`} />
+          </Stack>
+
+          <Divider sx={{ my: 1.5 }} />
+
+          <Typography variant="body2">
+            Net after adjustments = Equipment total − Discounts − Advances + Refunds
+          </Typography>
+          <Typography variant="h6" sx={{ mt: 0.5 }}>
+            {fmtLKR.format(summary.netAfterAdj)}
+          </Typography>
+        </CardContent>
+      </Card>
     </Box>
   );
 }
-
-export default InvoiceItem2;
