@@ -386,6 +386,7 @@ app.get("/invoiceIdRetrieve", async (req, res) => {
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });
+// Fetch invoice + customer + equipment + payments
 app.get("/invoiceDataRetrieve/:invoiceIdSearch", async (req, res) => {
   try {
     const completeInvoiceDetails = await getInvoiceDetails(
@@ -399,6 +400,19 @@ app.get("/invoiceDataRetrieve/:invoiceIdSearch", async (req, res) => {
     }
   } catch (error) {
     console.error("Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Update invoice (apply discount / set completed date / set ID handover / add payments / returns)
+app.post("/updateInvoiceDetails", async (req, res) => {
+  try {
+    const result = await updateInvoiceDetails(req.body);
+    return res.json({
+      message: `Customer details updated for the customer with id : ${req.body.id}`,
+    });
+  } catch (error) {
+    console.error("Error in updateCustomerDetails:", error);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 });

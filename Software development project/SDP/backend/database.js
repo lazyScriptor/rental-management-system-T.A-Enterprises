@@ -555,9 +555,13 @@ export async function createInvoiceDetails(InvoiceCompleteDetail) {
 }
 export async function getInvoiceDetails(invoiceIdSearch) {
   try {
-    // Fetch customer, invoice, equipment, and additional invoice details
     const [invoiceDetails] = await pool.query(
-      `SELECT customer.*, invoiceEquipment.*, equipment.*, invoice.inv_advance, invoice.inv_special_message, invoice.inv_idcardstatus, invoice.inv_idhandoverstatus, invoice.inv_discount, invoice.inv_createddate, invoice.inv_completed_datetime, equipmentCategory.* ,specialEquipment.*
+      `SELECT customer.*, invoiceEquipment.*, equipment.*,
+              invoice.inv_advance, invoice.inv_special_message,
+              invoice.inv_idcardstatus, invoice.inv_idhandoverstatus,
+              invoice.inv_discount, invoice.inv_createddate,
+              invoice.inv_completed_datetime,
+              equipmentCategory.* ,specialEquipment.*
        FROM invoice
        LEFT JOIN customer ON customer.cus_id = invoice.inv_cusid
        LEFT JOIN invoiceEquipment ON invoice.inv_id = invoiceEquipment.inveq_invid
@@ -581,60 +585,16 @@ export async function getInvoiceDetails(invoiceIdSearch) {
         idHandoverStatus: null,
       };
 
-      function dateformatterr(dateString) {
-        const dateObject = new Date(dateString);
-
-        // Get year, month (0-indexed), day, hour, minutes, seconds, and milliseconds
-        const year = dateObject.getFullYear();
-        const month = dateObject.getMonth();
-        const day = dateObject.getDate();
-        const hour = dateObject.getHours();
-        const minutes = dateObject.getMinutes();
-        const seconds = dateObject.getSeconds();
-        const milliseconds = dateObject.getMilliseconds();
-
-        // Format the date and time with timezone information
-        const formattedDateTime = `${year}-${month + 1}-${day
-          .toString()
-          .padStart(2, "0")}T${hour.toString().padStart(2, "0")}:${minutes
-          .toString()
-          .padStart(2, "0")}`;
-
-        return formattedDateTime;
-      }
-      function getTimeFromISODateString(isoDateString) {
-        const date = new Date(isoDateString);
-        const hours = `0${date.getUTCHours()}`.slice(-2);
-        const minutes = `0${date.getUTCMinutes()}`.slice(-2);
-        const seconds = `0${date.getUTCSeconds()}`.slice(-2);
-        return `${hours}:${minutes}:${seconds}`;
-      }
-
-      console.log(
-        "This is the incoive Object",
-        getTimeFromISODateString(invoiceDetails[0].inv_createddate)
-      );
       const customerDetails = Object.keys(invoiceDetails[0])
         .filter((key) => key.startsWith("cus_") || key === "nic")
         .reduce((obj, key) => {
           obj[key] = invoiceDetails[0][key];
           return obj;
         }, {});
-
       invoiceObject.customerDetails = customerDetails;
-
-      function dateformatter(date) {
-        const createdDate = new Date(date);
-        return createdDate;
-      }
-
-      invoiceObject.createdDate = dateformatter(
-        invoiceDetails[0].inv_createddate
-      );
-
+      invoiceObject.createdDate = new Date(invoiceDetails[0].inv_createddate);
       invoiceObject.InvoiceID = invoiceIdSearch;
 
-      // Extracting equipment details
       const equipmentDetails = invoiceDetails.map((record) => ({
         eq_id: record.eq_id,
         eq_name: record.eq_name,
@@ -661,32 +621,26 @@ export async function getInvoiceDetails(invoiceIdSearch) {
       }));
       invoiceObject.eqdetails = equipmentDetails;
 
-      // Fetch payment details
       const [invoicePayments] = await pool.query(
-        `SELECT invpay_payment_id, invpay_payment_date, invpay_amount 
-         FROM invoicePayments 
+        `SELECT invpay_payment_id, invpay_payment_date, invpay_amount
+         FROM invoicePayments
          WHERE invpay_inv_id = ?`,
         [invoiceIdSearch]
       );
-
-      // Extracting payment details
-      const paymentDetails = invoicePayments.map((payment) => ({
-        invpay_payment_id: payment.invpay_payment_id,
-        invpay_payment_date: payment.invpay_payment_date,
-        invpay_amount: payment.invpay_amount,
+      invoiceObject.payments = invoicePayments.map((p) => ({
+        invpay_payment_id: p.invpay_payment_id,
+        invpay_payment_date: p.invpay_payment_date,
+        invpay_amount: p.invpay_amount,
       }));
 
-      invoiceObject.payments = paymentDetails;
-
-      // Adding additional invoice details
       invoiceObject.advance = invoiceDetails[0].inv_advance;
-      invoiceObject.invoiceSpecialmessage =
-        invoiceDetails[0].inv_special_message;
+      invoiceObject.invoiceSpecialmessage = invoiceDetails[0].inv_special_message;
       invoiceObject.idStatus = !!invoiceDetails[0].inv_idcardstatus;
+      invoiceObject.idHandoverStatus = !!invoiceDetails[0].inv_idhandoverstatus;
+      invoiceObject.discount = invoiceDetails[0].inv_discount;
       invoiceObject.inv_completed_datetime =
         invoiceDetails[0].inv_completed_datetime;
-      invoiceObject.discount = invoiceDetails[0].inv_discount;
-      invoiceObject.idHandoverStatus = !!invoiceDetails[0].inv_idhandoverstatus;
+
       return invoiceObject;
     } else {
       console.error("No invoice details found");
@@ -699,19 +653,25 @@ export async function getInvoiceDetails(invoiceIdSearch) {
 }
 
 export async function updateInvoiceDetails(InvoiceCompleteDetail) {
-  let createdDate;
-  console.log("This is the handover statis",InvoiceCompleteDetail.idHandoverStatus);
+  let createdDate = null;
+
+  // When the UI completes the invoice, it sends invoiceCompletedDate
   if (InvoiceCompleteDetail.invoiceCompletedDate) {
     createdDate = dayjs(InvoiceCompleteDetail.invoiceCompletedDate)
       .tz("Asia/Colombo")
       .format("YYYY-MM-DD HH:mm:ss");
-    // Update invoice details
-  } else {
-    createdDate = null;
   }
+
+  // 1) invoice header update
   try {
     await pool.query(
-      "UPDATE invoice SET inv_special_message = ?, inv_rating = ?, inv_completed_datetime = ?, inv_discount = COALESCE(?, inv_discount), inv_idhandoverstatus = ? WHERE inv_id = ?",
+      `UPDATE invoice
+       SET inv_special_message = ?,
+           inv_rating = ?,
+           inv_completed_datetime = ?,
+           inv_discount = COALESCE(?, inv_discount),
+           inv_idhandoverstatus = ?
+       WHERE inv_id = ?`,
       [
         InvoiceCompleteDetail.inv_special_message,
         InvoiceCompleteDetail.inv_rating,
@@ -725,26 +685,25 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
     console.log("Error occurred in backend invoice details update1", error);
   }
 
-  // Update invoice payment table
+  // 2) payments upsert (supports negative amounts = refunds)
   try {
     for (const payment of InvoiceCompleteDetail.payments) {
-      // Format the date
       const formattedDate = dayjs(payment.invpay_payment_date)
         .tz("Asia/Colombo")
         .format("YYYY-MM-DD HH:mm:ss");
-      console.log(formattedDate);
 
-      // Use the formatted date in the query
       await pool.query(
         `INSERT INTO invoicePayments (invpay_payment_id, invpay_inv_id, invpay_amount, invpay_payment_date)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
-         invpay_inv_id = VALUES(invpay_inv_id), invpay_amount = VALUES(invpay_amount), invpay_payment_date = VALUES(invpay_payment_date)`,
+           invpay_inv_id = VALUES(invpay_inv_id),
+           invpay_amount = VALUES(invpay_amount),
+           invpay_payment_date = VALUES(invpay_payment_date)`,
         [
           payment.invpay_payment_id,
           InvoiceCompleteDetail.InvoiceID,
           payment.invpay_amount,
-          formattedDate, // Use the formatted date here
+          formattedDate,
         ]
       );
     }
@@ -752,10 +711,8 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
     console.log("Error occurred in backend invoice details update2:", error);
   }
 
-  // Update invoice equipment details
-
+  // 3) equipment return handling (no change here)
   try {
-    // Function to format the date for SQL
     function formatDateForSQL(date) {
       if (!date) return null;
       const d = new Date(date);
@@ -770,23 +727,9 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
         equipment.inveq_return_quantity < equipment.inveq_borrowqty &&
         equipment.inveq_return_quantity != 0
       ) {
-        // If returned quantity is less than borrowed quantity
-        console.log("object");
-        // Variables for updated quantities and dates
         const returnedQuantity = equipment.inveq_return_quantity;
         const previousBorrowQuantity = equipment.inveq_borrowqty;
         const newBorrowQuantity = previousBorrowQuantity - returnedQuantity;
-
-        console.log(
-          "return qty",
-          returnedQuantity,
-          "newborrowed",
-          returnedQuantity,
-          "prevborrowqty",
-          previousBorrowQuantity,
-          "newborrowqty",
-          newBorrowQuantity
-        );
 
         const formattedReturnDate = formatDateForSQL(
           equipment.inveq_return_date
@@ -796,63 +739,51 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
         );
 
         await pool.query(
-          `INSERT INTO invoiceEquipment (inveq_eqid, inveq_invid, inveq_borrowqty, inveq_borrow_date,inveq_return_date,inveq_returned_quantity,inveq_updated_status)
-             VALUES (?, ?, ?, ?,?,?,?)`,
+          `INSERT INTO invoiceEquipment (inveq_eqid, inveq_invid, inveq_borrowqty, inveq_borrow_date, inveq_return_date, inveq_returned_quantity, inveq_updated_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             equipment.eq_id,
             InvoiceCompleteDetail.InvoiceID,
             returnedQuantity,
-            formattedBorrowDate, // Updated borrow date
+            formattedBorrowDate,
             formattedReturnDate,
             returnedQuantity,
             1,
           ]
         );
 
-        // Update the existing row
         await pool.query(
           `UPDATE invoiceEquipment
-             SET
-               inveq_returned_quantity = ?,
-               inveq_borrowqty = ?
-             WHERE
-               inveq_invid = ?
-               AND inveq_eqid = ?
-               AND inveq_returned_quantity = 0`,
+             SET inveq_returned_quantity = ?,
+                 inveq_borrowqty = ?
+           WHERE inveq_invid = ?
+             AND inveq_eqid = ?
+             AND inveq_returned_quantity = 0`,
           [
-            0, // Update returned quantity
-            newBorrowQuantity, // Update borrowed quantity to the returned quantity
-            // formattedReturnDate, // Update return date
+            0,
+            newBorrowQuantity,
             InvoiceCompleteDetail.InvoiceID,
             equipment.eq_id,
           ]
         );
-
-        // Insert a new row with the remaining borrowed quantity
       } else if (
         equipment.inveq_return_quantity == equipment.inveq_borrowqty &&
         equipment.inveq_updated_status == 0
       ) {
-        console.log("it equals");
-        // If returned quantity is equal to borrowed quantity
-
         const formattedReturnDate = formatDateForSQL(
           equipment.inveq_return_date
         );
 
-        // Update the existing row
         await pool.query(
-          `UPDATE invoiceEquipment 
-            SET 
-              inveq_returned_quantity = ?, 
-              inveq_borrowqty = ?, 
-              inveq_return_date = ? ,
-              inveq_updated_status = ?
-            WHERE 
-              inveq_invid = ? 
-              AND inveq_eqid = ?
-              AND inveq_returned_quantity = 0
-              AND inveq_updated_status=0`,
+          `UPDATE invoiceEquipment
+             SET inveq_returned_quantity = ?,
+                 inveq_borrowqty = ?,
+                 inveq_return_date = ?,
+                 inveq_updated_status = ?
+           WHERE inveq_invid = ?
+             AND inveq_eqid = ?
+             AND inveq_returned_quantity = 0
+             AND inveq_updated_status = 0`,
           [
             equipment.inveq_return_quantity,
             equipment.inveq_borrowqty,
