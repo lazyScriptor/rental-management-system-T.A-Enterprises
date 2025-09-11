@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { Doughnut } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import {
-  Chart as ChartJS, ArcElement, CategoryScale, LinearScale, Tooltip, Legend,
+  Chart as ChartJS,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+  Legend,
 } from "chart.js";
 import { Paper, Box, Typography } from "@mui/material";
 
-ChartJS.register(ArcElement, CategoryScale, LinearScale, Tooltip, Legend);
+ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
-export default function EquipmentRevenueDoughnut({ startDate, endDate }) {
+export default function EquipmentUtilizationBar({ startDate, endDate }) {
   const [rows, setRows] = useState([]);
 
   useEffect(() => {
@@ -16,29 +21,32 @@ export default function EquipmentRevenueDoughnut({ startDate, endDate }) {
     if (startDate) params.startDate = new Date(startDate).toISOString();
     if (endDate) params.endDate = new Date(endDate).toISOString();
     axios
-      .get("http://localhost:8085/reports/getEquipmentRevenueDetails", { params })
+      .get("http://localhost:8085/reports/getEquipmentUtilizationDetails", { params })
       .then((res) => setRows(res.data.response || []))
       .catch(() => setRows([]));
   }, [startDate, endDate]);
 
+  const labels = rows.map((r) => r.eq_name);
   const data = {
-    labels: rows.map((x) => x.eq_name),
-    datasets: [{ data: rows.map((x) => Number(x.total_revenue || 0)) }],
+    labels,
+    datasets: [
+      { label: "Total Rentals", data: rows.map((r) => Number(r.total_rentals || 0)), borderWidth: 1 },
+      { label: "Total Rental Days", data: rows.map((r) => Number(r.total_rental_days || 0)), borderWidth: 1 },
+    ],
   };
   const options = {
     responsive: true,
-    plugins: { legend: { position: "left" }, tooltip: { callbacks: {
-      label: (ctx)=> `Rs. ${Number(ctx.raw).toLocaleString()}`
-    }}},
+    plugins: { legend: { position: "top" } },
+    scales: { y: { beginAtZero: true } },
   };
 
   return (
     <Paper elevation={2} sx={{ p: 2, borderRadius: 2, height: "100%" }}>
       <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
-        Revenue by Equipment
+        Equipment Utilization
       </Typography>
       <Box sx={{ height: 300 }}>
-        <Doughnut data={data} options={options} />
+        <Bar data={data} options={options} />
       </Box>
     </Paper>
   );

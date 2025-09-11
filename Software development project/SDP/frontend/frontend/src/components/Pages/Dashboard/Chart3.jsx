@@ -1,127 +1,95 @@
-import React, { useState, useEffect, useRef } from "react";
-import Chart from "chart.js/auto"; // Import Chart.js
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import axios from "axios";
+import { Paper, Box, Typography } from "@mui/material";
+import Chart from "chart.js/auto";
 
-function Chart3() {
-  const [chartData, setChartData] = useState([]);
+export default function Chart3({ startDate, endDate }) {
+  const [rows, setRows] = useState([]);
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch(
-          "http://localhost:8085/reports/getCombinedInvoiceReports"
-        );
-        const data = await response.json();
-        console.log(data);
-        if (data && Array.isArray(data.response)) {
-          setChartData(data.response);
-        } else {
-          console.error("Fetched data is not an array:", data);
-        }
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      }
+    const params = {};
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    axios
+      .get("http://localhost:8085/reports/getCombinedInvoiceReports", { params })
+      .then((res) => setRows(res?.data?.response || []))
+      .catch(() => setRows([]));
+  }, [startDate, endDate]);
+
+  const grouped = useMemo(() => {
+    const acc = {};
+    rows.forEach((r) => {
+      const d = new Date(r.inv_createddate).toLocaleDateString();
+      acc[d] = acc[d] || { revenue: 0, income: 0 };
+      acc[d].revenue += Number(r.total_revenue || 0);
+      acc[d].income += Number(r.total_income || 0);
+    });
+    const dates = Object.keys(acc);
+    return {
+      dates,
+      revenues: dates.map((d) => acc[d].revenue),
+      incomes: dates.map((d) => acc[d].income),
     };
+  }, [rows]);
 
-    fetchData();
-  }, []); // Fetch data when component mounts
-
-  // Preprocess the data to group revenues and income by date and sum them for each day
-  const groupedData = chartData.reduce((acc, item) => {
-    const date = new Date(item.inv_createddate).toLocaleDateString();
-    if (!acc[date]) {
-      acc[date] = { revenue: 0, income: 0 };
-    }
-    acc[date].revenue += parseFloat(item.total_revenue);
-    acc[date].income += parseFloat(item.total_income);
-    return acc;
-  }, {});
-
-  const dates = Object.keys(groupedData);
-  const revenues = dates.map(date => groupedData[date].revenue);
-  const incomes = dates.map(date => groupedData[date].income);
-
-  // Calculate today's revenue
-  const calculateTodaysRevenue = () => {
-    const today = new Date().toLocaleDateString();
-    return chartData
-      .filter((item) => new Date(item.inv_createddate).toLocaleDateString() === today)
-      .reduce((total, item) => total + parseFloat(item.total_revenue), 0);
-  };
-
-  const todaysRevenue = calculateTodaysRevenue();
-
-  // Render the chart when data changes
   useEffect(() => {
-    if (chartInstance.current) {
-      chartInstance.current.destroy(); // Destroy the previous chart instance
-    }
+    if (chartInstance.current) chartInstance.current.destroy();
+    if (!grouped.dates.length || !chartRef.current) return;
 
-    if (dates.length > 0) {
-      const ctx = chartRef.current.getContext("2d");
-      chartInstance.current = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: dates,
-          datasets: [
-            {
-              label: "Total Revenue",
-              data: revenues,
-              backgroundColor: "rgba(75, 192, 192, 0.2)",
-              borderColor: "rgba(75, 192, 192, 1)",
-              borderWidth: 1,
-            },
-            {
-              label: "Total Income",
-              data: incomes,
-              backgroundColor: "rgba(153, 102, 255, 0.2)",
-              borderColor: "rgba(153, 102, 255, 1)",
-              borderWidth: 1,
-            },
-          ],
-        },
-        options: {
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Date', // Name the x-axis
-              },
-            },
-            y: {
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'Amount', // Name the y-axis
-              },
-            },
+    const ctx = chartRef.current.getContext("2d");
+    chartInstance.current = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: grouped.dates,
+        datasets: [
+          {
+            label: "Total Revenue",
+            data: grouped.revenues,
+            backgroundColor: "rgba(99, 132, 255, 0.2)",
+            borderColor: "rgba(99, 132, 255, 1)",
+            borderWidth: 1,
           },
-          plugins: {
-            tooltip: {
-              callbacks: {
-                title: (tooltipItems) => {
-                  return `Date: ${tooltipItems[0].label}`;
-                },
-                label: (tooltipItem) => {
-                  const datasetLabel = tooltipItem.dataset.label;
-                  const value = tooltipItem.raw;
-                  return `${datasetLabel}: ${value}`;
-                },
-              },
-            },
+          {
+            label: "Total Income",
+            data: grouped.incomes,
+            backgroundColor: "rgba(75, 192, 192, 0.2)",
+            borderColor: "rgba(75, 192, 192, 1)",
+            borderWidth: 1,
           },
+        ],
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { title: { display: true, text: "Date" } },
+          y: { beginAtZero: true, title: { display: true, text: "Amount (LKR)" } },
         },
-      });
-    }
-  }, [chartData]);
+      },
+    });
+
+    return () => {
+      if (chartInstance.current) chartInstance.current.destroy();
+    };
+  }, [grouped]);
+
+  const today = new Date().toLocaleDateString();
+  const todaysRevenue = rows
+    .filter((r) => new Date(r.inv_createddate).toLocaleDateString() === today)
+    .reduce((acc, r) => acc + Number(r.total_revenue || 0), 0);
 
   return (
-    <div style={{ width: "500px"}}>
-      <canvas ref={chartRef} id="myChart"></canvas>
-      <h3>Today's Revenue: ${todaysRevenue.toFixed(2)}</h3>
-    </div>
+    <Paper elevation={0} sx={{ p: 0, height: "100%" }}>
+      <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+        Revenue vs Income (by Day)
+      </Typography>
+      <Box sx={{ height: 300 }}>
+        <canvas ref={chartRef} />
+      </Box>
+      <Typography variant="caption" color="text.secondary">
+        Today: Rs. {todaysRevenue.toLocaleString()}
+      </Typography>
+    </Paper>
   );
 }
-
-export default Chart3;
