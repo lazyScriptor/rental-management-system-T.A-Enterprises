@@ -555,13 +555,9 @@ export async function createInvoiceDetails(InvoiceCompleteDetail) {
 }
 export async function getInvoiceDetails(invoiceIdSearch) {
   try {
+    // Fetch customer, invoice, equipment, and additional invoice details
     const [invoiceDetails] = await pool.query(
-      `SELECT customer.*, invoiceEquipment.*, equipment.*,
-              invoice.inv_advance, invoice.inv_special_message,
-              invoice.inv_idcardstatus, invoice.inv_idhandoverstatus,
-              invoice.inv_discount, invoice.inv_createddate,
-              invoice.inv_completed_datetime,
-              equipmentCategory.* ,specialEquipment.*
+      `SELECT customer.*, invoiceEquipment.*, equipment.*, invoice.inv_advance, invoice.inv_special_message, invoice.inv_idcardstatus, invoice.inv_idhandoverstatus, invoice.inv_discount, invoice.inv_createddate, invoice.inv_completed_datetime, equipmentCategory.* ,specialEquipment.*
        FROM invoice
        LEFT JOIN customer ON customer.cus_id = invoice.inv_cusid
        LEFT JOIN invoiceEquipment ON invoice.inv_id = invoiceEquipment.inveq_invid
@@ -585,16 +581,60 @@ export async function getInvoiceDetails(invoiceIdSearch) {
         idHandoverStatus: null,
       };
 
+      function dateformatterr(dateString) {
+        const dateObject = new Date(dateString);
+
+        // Get year, month (0-indexed), day, hour, minutes, seconds, and milliseconds
+        const year = dateObject.getFullYear();
+        const month = dateObject.getMonth();
+        const day = dateObject.getDate();
+        const hour = dateObject.getHours();
+        const minutes = dateObject.getMinutes();
+        const seconds = dateObject.getSeconds();
+        const milliseconds = dateObject.getMilliseconds();
+
+        // Format the date and time with timezone information
+        const formattedDateTime = `${year}-${month + 1}-${day
+          .toString()
+          .padStart(2, "0")}T${hour.toString().padStart(2, "0")}:${minutes
+          .toString()
+          .padStart(2, "0")}`;
+
+        return formattedDateTime;
+      }
+      function getTimeFromISODateString(isoDateString) {
+        const date = new Date(isoDateString);
+        const hours = `0${date.getUTCHours()}`.slice(-2);
+        const minutes = `0${date.getUTCMinutes()}`.slice(-2);
+        const seconds = `0${date.getUTCSeconds()}`.slice(-2);
+        return `${hours}:${minutes}:${seconds}`;
+      }
+
+      console.log(
+        "This is the incoive Object",
+        getTimeFromISODateString(invoiceDetails[0].inv_createddate)
+      );
       const customerDetails = Object.keys(invoiceDetails[0])
         .filter((key) => key.startsWith("cus_") || key === "nic")
         .reduce((obj, key) => {
           obj[key] = invoiceDetails[0][key];
           return obj;
         }, {});
+
       invoiceObject.customerDetails = customerDetails;
-      invoiceObject.createdDate = new Date(invoiceDetails[0].inv_createddate);
+
+      function dateformatter(date) {
+        const createdDate = new Date(date);
+        return createdDate;
+      }
+
+      invoiceObject.createdDate = dateformatter(
+        invoiceDetails[0].inv_createddate
+      );
+
       invoiceObject.InvoiceID = invoiceIdSearch;
 
+      // Extracting equipment details
       const equipmentDetails = invoiceDetails.map((record) => ({
         eq_id: record.eq_id,
         eq_name: record.eq_name,
@@ -621,26 +661,32 @@ export async function getInvoiceDetails(invoiceIdSearch) {
       }));
       invoiceObject.eqdetails = equipmentDetails;
 
+      // Fetch payment details
       const [invoicePayments] = await pool.query(
-        `SELECT invpay_payment_id, invpay_payment_date, invpay_amount
-         FROM invoicePayments
+        `SELECT invpay_payment_id, invpay_payment_date, invpay_amount 
+         FROM invoicePayments 
          WHERE invpay_inv_id = ?`,
         [invoiceIdSearch]
       );
-      invoiceObject.payments = invoicePayments.map((p) => ({
-        invpay_payment_id: p.invpay_payment_id,
-        invpay_payment_date: p.invpay_payment_date,
-        invpay_amount: p.invpay_amount,
+
+      // Extracting payment details
+      const paymentDetails = invoicePayments.map((payment) => ({
+        invpay_payment_id: payment.invpay_payment_id,
+        invpay_payment_date: payment.invpay_payment_date,
+        invpay_amount: payment.invpay_amount,
       }));
 
+      invoiceObject.payments = paymentDetails;
+
+      // Adding additional invoice details
       invoiceObject.advance = invoiceDetails[0].inv_advance;
-      invoiceObject.invoiceSpecialmessage = invoiceDetails[0].inv_special_message;
+      invoiceObject.invoiceSpecialmessage =
+        invoiceDetails[0].inv_special_message;
       invoiceObject.idStatus = !!invoiceDetails[0].inv_idcardstatus;
-      invoiceObject.idHandoverStatus = !!invoiceDetails[0].inv_idhandoverstatus;
-      invoiceObject.discount = invoiceDetails[0].inv_discount;
       invoiceObject.inv_completed_datetime =
         invoiceDetails[0].inv_completed_datetime;
-
+      invoiceObject.discount = invoiceDetails[0].inv_discount;
+      invoiceObject.idHandoverStatus = !!invoiceDetails[0].inv_idhandoverstatus;
       return invoiceObject;
     } else {
       console.error("No invoice details found");
@@ -653,25 +699,19 @@ export async function getInvoiceDetails(invoiceIdSearch) {
 }
 
 export async function updateInvoiceDetails(InvoiceCompleteDetail) {
-  let createdDate = null;
-
-  // When the UI completes the invoice, it sends invoiceCompletedDate
+  let createdDate;
+  console.log("This is the handover statis",InvoiceCompleteDetail.idHandoverStatus);
   if (InvoiceCompleteDetail.invoiceCompletedDate) {
     createdDate = dayjs(InvoiceCompleteDetail.invoiceCompletedDate)
       .tz("Asia/Colombo")
       .format("YYYY-MM-DD HH:mm:ss");
+    // Update invoice details
+  } else {
+    createdDate = null;
   }
-
-  // 1) invoice header update
   try {
     await pool.query(
-      `UPDATE invoice
-       SET inv_special_message = ?,
-           inv_rating = ?,
-           inv_completed_datetime = ?,
-           inv_discount = COALESCE(?, inv_discount),
-           inv_idhandoverstatus = ?
-       WHERE inv_id = ?`,
+      "UPDATE invoice SET inv_special_message = ?, inv_rating = ?, inv_completed_datetime = ?, inv_discount = COALESCE(?, inv_discount), inv_idhandoverstatus = ? WHERE inv_id = ?",
       [
         InvoiceCompleteDetail.inv_special_message,
         InvoiceCompleteDetail.inv_rating,
@@ -685,25 +725,26 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
     console.log("Error occurred in backend invoice details update1", error);
   }
 
-  // 2) payments upsert (supports negative amounts = refunds)
+  // Update invoice payment table
   try {
     for (const payment of InvoiceCompleteDetail.payments) {
+      // Format the date
       const formattedDate = dayjs(payment.invpay_payment_date)
         .tz("Asia/Colombo")
         .format("YYYY-MM-DD HH:mm:ss");
+      console.log(formattedDate);
 
+      // Use the formatted date in the query
       await pool.query(
         `INSERT INTO invoicePayments (invpay_payment_id, invpay_inv_id, invpay_amount, invpay_payment_date)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
-           invpay_inv_id = VALUES(invpay_inv_id),
-           invpay_amount = VALUES(invpay_amount),
-           invpay_payment_date = VALUES(invpay_payment_date)`,
+         invpay_inv_id = VALUES(invpay_inv_id), invpay_amount = VALUES(invpay_amount), invpay_payment_date = VALUES(invpay_payment_date)`,
         [
           payment.invpay_payment_id,
           InvoiceCompleteDetail.InvoiceID,
           payment.invpay_amount,
-          formattedDate,
+          formattedDate, // Use the formatted date here
         ]
       );
     }
@@ -711,8 +752,10 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
     console.log("Error occurred in backend invoice details update2:", error);
   }
 
-  // 3) equipment return handling (no change here)
+  // Update invoice equipment details
+
   try {
+    // Function to format the date for SQL
     function formatDateForSQL(date) {
       if (!date) return null;
       const d = new Date(date);
@@ -727,9 +770,23 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
         equipment.inveq_return_quantity < equipment.inveq_borrowqty &&
         equipment.inveq_return_quantity != 0
       ) {
+        // If returned quantity is less than borrowed quantity
+        console.log("object");
+        // Variables for updated quantities and dates
         const returnedQuantity = equipment.inveq_return_quantity;
         const previousBorrowQuantity = equipment.inveq_borrowqty;
         const newBorrowQuantity = previousBorrowQuantity - returnedQuantity;
+
+        console.log(
+          "return qty",
+          returnedQuantity,
+          "newborrowed",
+          returnedQuantity,
+          "prevborrowqty",
+          previousBorrowQuantity,
+          "newborrowqty",
+          newBorrowQuantity
+        );
 
         const formattedReturnDate = formatDateForSQL(
           equipment.inveq_return_date
@@ -739,51 +796,63 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
         );
 
         await pool.query(
-          `INSERT INTO invoiceEquipment (inveq_eqid, inveq_invid, inveq_borrowqty, inveq_borrow_date, inveq_return_date, inveq_returned_quantity, inveq_updated_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoiceEquipment (inveq_eqid, inveq_invid, inveq_borrowqty, inveq_borrow_date,inveq_return_date,inveq_returned_quantity,inveq_updated_status)
+             VALUES (?, ?, ?, ?,?,?,?)`,
           [
             equipment.eq_id,
             InvoiceCompleteDetail.InvoiceID,
             returnedQuantity,
-            formattedBorrowDate,
+            formattedBorrowDate, // Updated borrow date
             formattedReturnDate,
             returnedQuantity,
             1,
           ]
         );
 
+        // Update the existing row
         await pool.query(
           `UPDATE invoiceEquipment
-             SET inveq_returned_quantity = ?,
-                 inveq_borrowqty = ?
-           WHERE inveq_invid = ?
-             AND inveq_eqid = ?
-             AND inveq_returned_quantity = 0`,
+             SET
+               inveq_returned_quantity = ?,
+               inveq_borrowqty = ?
+             WHERE
+               inveq_invid = ?
+               AND inveq_eqid = ?
+               AND inveq_returned_quantity = 0`,
           [
-            0,
-            newBorrowQuantity,
+            0, // Update returned quantity
+            newBorrowQuantity, // Update borrowed quantity to the returned quantity
+            // formattedReturnDate, // Update return date
             InvoiceCompleteDetail.InvoiceID,
             equipment.eq_id,
           ]
         );
+
+        // Insert a new row with the remaining borrowed quantity
       } else if (
         equipment.inveq_return_quantity == equipment.inveq_borrowqty &&
         equipment.inveq_updated_status == 0
       ) {
+        console.log("it equals");
+        // If returned quantity is equal to borrowed quantity
+
         const formattedReturnDate = formatDateForSQL(
           equipment.inveq_return_date
         );
 
+        // Update the existing row
         await pool.query(
-          `UPDATE invoiceEquipment
-             SET inveq_returned_quantity = ?,
-                 inveq_borrowqty = ?,
-                 inveq_return_date = ?,
-                 inveq_updated_status = ?
-           WHERE inveq_invid = ?
-             AND inveq_eqid = ?
-             AND inveq_returned_quantity = 0
-             AND inveq_updated_status = 0`,
+          `UPDATE invoiceEquipment 
+            SET 
+              inveq_returned_quantity = ?, 
+              inveq_borrowqty = ?, 
+              inveq_return_date = ? ,
+              inveq_updated_status = ?
+            WHERE 
+              inveq_invid = ? 
+              AND inveq_eqid = ?
+              AND inveq_returned_quantity = 0
+              AND inveq_updated_status=0`,
           [
             equipment.inveq_return_quantity,
             equipment.inveq_borrowqty,
@@ -1306,66 +1375,76 @@ export async function getIncompleteInvoicesByCustomerId(customerId) {
     return [];
   }
 }
-export async function createChildCustomer(payload) {
-  const { parentId, fname, lname, nic, phoneNumber, address1, address2 } = payload;
+export async function createChildCustomer(body) {
+  const {
+    parentId,
+    fname,
+    lname,
+    nic,          // optional (can be null/empty)
+    phoneNumber,  // required
+    address1,
+    address2,     // optional
+  } = body;
 
-  if (!parentId) {
-    throw { statusCode: 400, message: "parentId is required" };
+  // Normalize optionals to NULL
+  const nicOrNull = nic && String(nic).trim() !== "" ? nic.trim() : null;
+  const addr2OrNull = address2 && String(address2).trim() !== "" ? address2.trim() : null;
+
+  // 1) Ensure parent exists & is not deleted
+  const [parent] = await pool.query(
+    "SELECT cus_id FROM customer WHERE cus_id = ? AND cus_delete_status = 0",
+    [parentId]
+  );
+  if (parent.length === 0) {
+    const err = new Error("Parent customer not found");
+    err.statusCode = 404;
+    throw err;
   }
 
-  try {
-    // Ensure parent exists
-    const [parentRows] = await pool.query(
-      "SELECT cus_id FROM customer WHERE cus_id = ? AND cus_delete_status = 0",
-      [parentId]
+  // 2) Guard against NIC/phone conflicts within active customers
+  //    (Allow NIC to be NULL/empty; phone is required by your UI/validation)
+  if (nicOrNull) {
+    const [nicClash] = await pool.query(
+      "SELECT cus_id FROM customer WHERE nic = ? AND cus_delete_status = 0",
+      [nicOrNull]
     );
-    if (parentRows.length === 0) {
-      throw { statusCode: 404, message: "Parent customer not found" };
+    if (nicClash.length > 0) {
+      const err = new Error("A customer with the same NIC already exists");
+      err.statusCode = 409;
+      throw err;
     }
-
-    const [result] = await pool.query(
-      `INSERT INTO customer_child
-        (cc_parent_cus_id, cc_fname, cc_lname, cc_nic, cc_phone_number, cc_address1, cc_address2, cc_delete_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-      [
-        parentId,
-        fname || null,
-        lname || null,
-        nic || null,
-        phoneNumber || null,
-        address1 || null,
-        address2 || null,
-      ]
-    );
-
-    return { insertId: result.insertId };
-  } catch (err) {
-    console.error("DB error in createChildCustomer:", err);
-    if (err?.statusCode) throw err;
-    throw { statusCode: 500, message: "DB error creating child customer" };
   }
+
+  const [phoneClash] = await pool.query(
+    "SELECT cus_id FROM customer WHERE cus_phone_number = ? AND cus_delete_status = 0",
+    [phoneNumber]
+  );
+  if (phoneClash.length > 0) {
+    const err = new Error("A customer with the same phone number already exists");
+    err.statusCode = 409;
+    throw err;
+  }
+
+  // 3) Insert the child record with FK to parent
+  // NOTE: This assumes your schema has `cus_parent_id` (INT, nullable) on `customer`.
+  const [result] = await pool.query(
+    `INSERT INTO customer
+      (cus_fname, cus_lname, nic, cus_phone_number, cus_address1, cus_address2, cus_parent_id, cus_delete_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+    [fname, lname, nicOrNull, phoneNumber, address1, addr2OrNull, parentId]
+  );
+
+  return { insertId: result.insertId };
 }
 
 export async function getChildrenByParentId(parentId) {
-  try {
-    const [rows] = await pool.query(
-      `SELECT 
-         cc_id,
-         cc_parent_cus_id,
-         cc_fname,
-         cc_lname,
-         cc_nic,
-         cc_phone_number,
-         cc_address1,
-         cc_address2
-       FROM customer_child
-       WHERE cc_parent_cus_id = ? AND cc_delete_status = 0
-       ORDER BY cc_fname, cc_lname`,
-      [parentId]
-    );
-    return rows;
-  } catch (err) {
-    console.error("DB error in getChildrenByParentId:", err);
-    throw err;
-  }
+  const [rows] = await pool.query(
+    `SELECT *
+       FROM customer
+      WHERE cus_parent_id = ?
+        AND cus_delete_status = 0
+      ORDER BY cus_fname, cus_lname`,
+    [parentId]
+  );
+  return rows;
 }
