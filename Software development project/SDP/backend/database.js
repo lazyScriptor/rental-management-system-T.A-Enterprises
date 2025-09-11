@@ -1375,3 +1375,66 @@ export async function getIncompleteInvoicesByCustomerId(customerId) {
     return [];
   }
 }
+export async function createChildCustomer(payload) {
+  const { parentId, fname, lname, nic, phoneNumber, address1, address2 } = payload;
+
+  if (!parentId) {
+    throw { statusCode: 400, message: "parentId is required" };
+  }
+
+  try {
+    // Ensure parent exists
+    const [parentRows] = await pool.query(
+      "SELECT cus_id FROM customer WHERE cus_id = ? AND cus_delete_status = 0",
+      [parentId]
+    );
+    if (parentRows.length === 0) {
+      throw { statusCode: 404, message: "Parent customer not found" };
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO customer_child
+        (cc_parent_cus_id, cc_fname, cc_lname, cc_nic, cc_phone_number, cc_address1, cc_address2, cc_delete_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        parentId,
+        fname || null,
+        lname || null,
+        nic || null,
+        phoneNumber || null,
+        address1 || null,
+        address2 || null,
+      ]
+    );
+
+    return { insertId: result.insertId };
+  } catch (err) {
+    console.error("DB error in createChildCustomer:", err);
+    if (err?.statusCode) throw err;
+    throw { statusCode: 500, message: "DB error creating child customer" };
+  }
+}
+
+export async function getChildrenByParentId(parentId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT 
+         cc_id,
+         cc_parent_cus_id,
+         cc_fname,
+         cc_lname,
+         cc_nic,
+         cc_phone_number,
+         cc_address1,
+         cc_address2
+       FROM customer_child
+       WHERE cc_parent_cus_id = ? AND cc_delete_status = 0
+       ORDER BY cc_fname, cc_lname`,
+      [parentId]
+    );
+    return rows;
+  } catch (err) {
+    console.error("DB error in getChildrenByParentId:", err);
+    throw err;
+  }
+}

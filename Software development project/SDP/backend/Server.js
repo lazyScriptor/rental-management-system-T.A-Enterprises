@@ -45,6 +45,8 @@ import {
   getCombinedInvoiceReports,
   reportsGetCustomerRatingsPerCustomer,
   getIncompleteInvoicesByCustomerId,
+  createChildCustomer,
+  getChildrenByParentId,
 } from "./database.js";
 
 const app = express();
@@ -711,5 +713,29 @@ app.get("/customer/incompleteInvoices/:customerId", async (req, res) => {
     res.json({ status: true, invoiceIds });
   } catch (error) {
     res.json({ status: false, invoiceIds: [] });
+  }
+});
+// create child
+app.post("/createChildCustomer", async (req, res) => {
+  try {
+    const result = await createChildCustomer(req.body);
+    return res.status(200).json({ status: true, insertId: result.insertId });
+  } catch (error) {
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({ status: false, message: error.message });
+    }
+    console.error("Error in /createChildCustomer:", error);
+    return res.status(500).json({ status: false, message: "Failed to create child customer" });
+  }
+});
+
+// fetch children for a parent
+app.get("/customers/:parentId/children", async (req, res) => {
+  try {
+    const rows = await getChildrenByParentId(req.params.parentId);
+    return res.status(200).json({ status: true, children: rows });
+  } catch (error) {
+    console.error("Error in /customers/:parentId/children:", error);
+    return res.status(500).json({ status: false, message: "Failed to fetch child customers" });
   }
 });

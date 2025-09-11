@@ -41,7 +41,7 @@ import Swal from "sweetalert2";
 import Lottie from "react-lottie";
 import CustomerPage from "../../assets/CustomerPage.json";
 import CustomerUnderSuperCustomer from "./CustomerUnderSuperCustomer";
-
+import AddChildCustomerDialog from "./AddChildCustomerDialog";
 
 function Row(props) {
   const { row, searchValue } = props;
@@ -185,6 +185,7 @@ export default function CustomerTableNew() {
 
 export function CustomerPageUpper(props) {
   const { setData, setSearchValue } = props;
+
   const trimvariablesForAdvanceSearch = (variable) => {
     const cleanedVariable = variable.replace(/[\s-+]/g, ""); // Replace all whitespace characters, hyphens, and plus signs with an empty string
     const trimmedvariable = cleanedVariable.trim();
@@ -254,6 +255,7 @@ export function CustomerPageMiddle() {
       borderRadius: "12px", // Increase the border radius
     },
   };
+  const [openChildDialog, setOpenChildDialog] = useState(false);
   const [customer, setCustomer] = useState({
     fname: "",
     lname: "",
@@ -425,7 +427,6 @@ export function CustomerPageMiddle() {
             height={"100%"}
             borderRadius={2}
           >
-            
             {/* Left side Box names,mic,pno*/}
             <Grid item xs={4}>
               <FormControl sx={{ gap: "20px", width: "100%" }}>
@@ -562,7 +563,6 @@ export function CustomerPageMiddle() {
                   border: `1px solid ${theme.palette.primary[500]}`,
                 }}
               >
-                
                 <Box display={"flex"} alignItems={"center"}>
                   <Checkbox
                     checked={!!errors.fname?.message}
@@ -622,14 +622,28 @@ export function CustomerPageMiddle() {
                   marginTop: "20px",
                 }}
               >
-                <CustomerUnderSuperCustomer/>
+                {/* Open Child Customer dialog */}
                 <Button
-                  // onClick={handleSaveDetails}
-                  variant="contained"
-                  type="submit"
+                  variant="outlined"
+                  onClick={() => setOpenChildDialog(true)}
                 >
+                  Add Child Customer
+                </Button>
+
+                {/* The popup */}
+                <AddChildCustomerDialog
+                  open={openChildDialog}
+                  onClose={() => setOpenChildDialog(false)}
+                  onCreated={(newId) => {
+                    // optional: refresh list or show toast
+                    setOpenChildDialog(false);
+                  }}
+                />
+
+                <Button variant="contained" type="submit">
                   Save
                 </Button>
+
                 <Button
                   variant="contained"
                   color="error"
