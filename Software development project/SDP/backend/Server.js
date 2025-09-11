@@ -45,8 +45,6 @@ import {
   getCombinedInvoiceReports,
   reportsGetCustomerRatingsPerCustomer,
   getIncompleteInvoicesByCustomerId,
-  createChildCustomer,
-  getChildCustomersByParentId,
 } from "./database.js";
 
 const app = express();
@@ -175,7 +173,9 @@ app.get("/getEquipmentbyID/:equipmentID", async (req, res) => {
   }
 });
 
-app.delete("/deleteEquipmentbyId/:id", async (req, res) => {
+
+
+app.delete('/deleteEquipmentbyId/:id', async (req, res) => {
   const equipmentId = req.params.id;
   const result = await deleteEquipmentById(equipmentId);
 
@@ -390,7 +390,6 @@ app.get("/invoiceDataRetrieve/:invoiceIdSearch", async (req, res) => {
       req.params.invoiceIdSearch
     );
     if (completeInvoiceDetails) {
-      console.log("Express complete invoice object", completeInvoiceDetails);
       return res.json(completeInvoiceDetails);
     } else {
       console.error("No invoice details found");
@@ -435,7 +434,7 @@ app.get("/fetchUserDetails", async (req, res) => {
   }
 });
 
-app.post("/createUser", async (req, res) => {
+app.post('/createUser', async (req, res) => {
   try {
     const userDetails = req.body;
 
@@ -444,8 +443,8 @@ app.post("/createUser", async (req, res) => {
     // Respond with success message or data if needed
     res.status(200).json(response);
   } catch (error) {
-    console.error("Error occurred in createUser API:", error);
-    res.status(500).json({ error: "Failed to create user" });
+    console.error('Error occurred in createUser API:', error);
+    res.status(500).json({ error: 'Failed to create user' });
   }
 });
 app.delete("/deleteUserRole/:userId/:role", async (req, res) => {
@@ -492,11 +491,11 @@ app.get(`/reports/getCustomerRatings`, async (req, res) => {
 });
 app.get(`/reports/getCustomerRatings/:id`, async (req, res) => {
   try {
-    const id = req.params.id;
-    console.log("id is pritin", id);
+    const id=req.params.id;
+    console.log("id is pritin",id)
     const response = await reportsGetCustomerRatingsPerCustomer(id);
     console.log(response);
-    res.json({ status: true, message: "Value retrieved", response: response });
+    res.json({ status: true, message: "Value retrieved", response:response });
   } catch (error) {
     res.json({
       status: false,
@@ -533,10 +532,7 @@ app.get("/reports/getEquipmentUtilizationDetails", async (req, res) => {
     }
 
     // Call the report function with parsed dates
-    response = await getEquipmentUtilizationReport(
-      parsedStartDate.toISOString(),
-      parsedEndDate.toISOString()
-    );
+    response = await getEquipmentUtilizationReport(parsedStartDate.toISOString(), parsedEndDate.toISOString());
 
     console.log(response);
     res.json({ status: true, message: "Value retrieved", response });
@@ -548,6 +544,7 @@ app.get("/reports/getEquipmentUtilizationDetails", async (req, res) => {
     });
   }
 });
+
 
 app.get("/reports/getEquipmentRevenueDetails", async (req, res) => {
   const { startDate, endDate } = req.query;
@@ -561,17 +558,11 @@ app.get("/reports/getEquipmentRevenueDetails", async (req, res) => {
     }
     // If only start date is provided
     else if (startDate && !endDate) {
-      response = await getEquipmentRevenueReport(
-        startDate,
-        new Date().toISOString()
-      );
+      response = await getEquipmentRevenueReport(startDate, new Date().toISOString());
     }
     // If only end date is provided
     else if (!startDate && endDate) {
-      response = await getEquipmentRevenueReport(
-        new Date(0).toISOString(),
-        endDate
-      );
+      response = await getEquipmentRevenueReport(new Date(0).toISOString(), endDate);
     }
     // If both start date and end date are missing
     else {
@@ -602,10 +593,7 @@ app.get("/reports/getUnderutilizedEquipment", async (req, res) => {
 
     // Call the report function with parsed dates
     if (parsedStartDate && parsedEndDate) {
-      response = await getUnderutilizedEquipment(
-        parsedStartDate,
-        parsedEndDate
-      );
+      response = await getUnderutilizedEquipment(parsedStartDate, parsedEndDate);
     } else {
       response = await getUnderutilizedEquipment(); // If start date or end date is missing, retrieve all data
     }
@@ -621,6 +609,7 @@ app.get("/reports/getUnderutilizedEquipment", async (req, res) => {
   }
 });
 
+
 app.get("/reports/getEquipmentRentalDetails", async (req, res) => {
   console.log("calling");
   const { startDate, endDate } = req.query;
@@ -634,10 +623,7 @@ app.get("/reports/getEquipmentRentalDetails", async (req, res) => {
 
     // Call the report function with parsed dates
     if (parsedStartDate && parsedEndDate) {
-      response = await getEquipmentRentalDetails(
-        parsedStartDate,
-        parsedEndDate
-      );
+      response = await getEquipmentRentalDetails(parsedStartDate, parsedEndDate);
     } else {
       response = await getEquipmentRentalDetails(); // If start date or end date is missing, retrieve all data
     }
@@ -652,6 +638,7 @@ app.get("/reports/getEquipmentRentalDetails", async (req, res) => {
     });
   }
 });
+
 
 app.get("/reports/getIncompleteRentals", async (req, res) => {
   console.log("calling");
@@ -669,53 +656,46 @@ app.get("/reports/getIncompleteRentals", async (req, res) => {
   }
 });
 
-app.get("/reports/getDeletedInvoices", async (req, res) => {
+app.get('/reports/getDeletedInvoices', async (req, res) => {
   let { start_date, end_date } = req.query;
 
   // If start_date is not provided, set it to the Unix epoch (1970-01-01)
   if (!start_date) {
-    start_date = new Date(0).toISOString().split("T")[0];
+    start_date = new Date(0).toISOString().split('T')[0];
   }
 
   // If end_date is not provided, set it to today's date
   if (!end_date) {
-    end_date = new Date().toISOString().split("T")[0];
+    end_date = new Date().toISOString().split('T')[0];
   }
 
   try {
     const data = await getDeletedInvoices(start_date, end_date);
     res.json({ status: true, response: data });
   } catch (error) {
-    res
-      .status(500)
-      .json({ status: false, error: "Failed to retrieve deleted invoices" });
+    res.status(500).json({ status: false, error: "Failed to retrieve deleted invoices" });
   }
 });
 
-app.get("/reports/getCombinedInvoiceReports", async (req, res) => {
+app.get('/reports/getCombinedInvoiceReports', async (req, res) => {
   let { start_date, end_date } = req.query;
 
   // If start_date is not provided, set it to the Unix epoch (1970-01-01)
   if (!start_date) {
-    start_date = new Date(0).toISOString().split("T")[0];
+    start_date = new Date(0).toISOString().split('T')[0];
   }
 
   // If end_date is not provided, set it to today's date
   if (!end_date) {
-    end_date = new Date().toISOString().split("T")[0];
+    end_date = new Date().toISOString().split('T')[0];
   }
 
   try {
     const data = await getCombinedInvoiceReports(start_date, end_date);
-    console.log(data);
+    console.log(data)
     res.json({ status: true, response: data });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        status: false,
-        error: "Failed to retrieve combined invoice reports",
-      });
+    res.status(500).json({ status: false, error: "Failed to retrieve combined invoice reports" });
   }
 });
 dotenv.config();
@@ -724,84 +704,12 @@ app.listen(port, () => {
   console.log(`Listening to port ${port}`);
 });
 
+
 app.get("/customer/incompleteInvoices/:customerId", async (req, res) => {
   try {
-    const invoiceIds = await getIncompleteInvoicesByCustomerId(
-      req.params.customerId
-    );
+    const invoiceIds = await getIncompleteInvoicesByCustomerId(req.params.customerId);
     res.json({ status: true, invoiceIds });
   } catch (error) {
     res.json({ status: false, invoiceIds: [] });
-  }
-});
-
-app.post("/createChildCustomer", async (req, res) => {
-  try {
-    const customerDetails = await createChildCustomer(req.body);
-    return res.json({
-      success: true,
-      message: `child customer details updated for the customer with id : ${req.body.superCustomerId}`,
-    });
-  } catch (error) {
-    console.error("Error in updateCustomerDetails:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// API endpoint to search for customers
-app.get("/searchCustomerByValue/:value", (req, res) => {
-  const searchValue = `%${req.params.value}%`;
-
-  const searchQuery = `
-    SELECT cus_id, cus_fname, cus_lname, nic, cus_phone_number 
-    FROM customers 
-    WHERE cus_id LIKE ? OR nic LIKE ? OR cus_phone_number LIKE ?
-    LIMIT 10
-  `;
-
-  db.execute(
-    searchQuery,
-    [searchValue, searchValue, searchValue],
-    (err, results) => {
-      if (err) {
-        console.error("Search error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Search failed",
-        });
-      }
-
-      res.json(results);
-    }
-  );
-});
-
-// Get child customers by parent ID
-app.get("/getChildCustomers/:parentId", async (req, res) => {
-  try {
-    const { parentId } = req.params;
-    const result = await getChildCustomersByParentId(parentId);
-    res.status(200).json(result);
-  } catch (error) {
-    console.error("Error in getChildCustomers API:", error);
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-});
-
-// Alternative: Get child customers with parent details
-app.get("/getChildCustomersWithParent/:parentId", async (req, res) => {
-  try {
-    const { parentId } = req.params;
-    const result = await getChildCustomersWithParentDetails(parentId);
-    res.status(200).json(result);
-  } catch (error) {
-    console.error("Error in getChildCustomersWithParent API:", error);
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
   }
 });

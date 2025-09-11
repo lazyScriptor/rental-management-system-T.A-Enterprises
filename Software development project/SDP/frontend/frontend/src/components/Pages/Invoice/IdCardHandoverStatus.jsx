@@ -4,16 +4,14 @@ import { InvoiceContext } from "../../../Contexts/Contexts";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 
 function IdCardHandoverStatus() {
-  const {
-    invoiceObject,
-    updateValue,
-  } = useContext(InvoiceContext);
+  const { invoiceObject, updateValue } = useContext(InvoiceContext);
 
-  const isKept = Boolean(invoiceObject?.iDHandoverStatus);
+  // Use the same key used elsewhere in your app (Invoice.jsx sets "idHandoverStatus")
+  const isHandedOver = Boolean(invoiceObject?.idHandoverStatus);
 
   const handleToggle = (event) => {
     const next = event.target.checked;
-    updateValue("iDHandoverStatus", next);
+    updateValue("idHandoverStatus", next);
   };
 
   return (
@@ -28,16 +26,19 @@ function IdCardHandoverStatus() {
         bgcolor: (theme) => theme.palette.primary[50],
       }}
     >
-      <Tooltip title="Toggle if the customer's ID card is kept with you">
+      <Tooltip title="Toggle if the customer's ID card has been handed back">
         <InfoOutlinedIcon fontSize="small" sx={{ mr: 0.5 }} />
       </Tooltip>
-      <Typography variant="body2">Handover ID card</Typography>
-      <Switch size="small" checked={isKept} onChange={handleToggle} />
+
+      <Typography variant="body2">ID handed over</Typography>
+
+      <Switch size="small" checked={isHandedOver} onChange={handleToggle} />
+
       <Chip
         size="small"
-        label={isKept ? "Kept" : "Not kept"}
-        color={isKept ? "success" : "default"}
-        variant={isKept ? "filled" : "outlined"}
+        label={isHandedOver ? "Handed over" : "Not handed"}
+        color={isHandedOver ? "success" : "default"}
+        variant={isHandedOver ? "filled" : "outlined"}
       />
     </Box>
   );

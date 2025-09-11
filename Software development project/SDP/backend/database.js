@@ -419,18 +419,17 @@ export async function createInvoiceDetails(InvoiceCompleteDetail) {
   // Update invoice details
   try {
     await pool.query(
-      "UPDATE invoice SET inv_advance = ?, inv_special_message = ?, inv_idcardstatus = ?, inv_cusid = ?, inv_createddate = ?, inv_discount = ?, inv_updatedstatus = ?,inv_childidcardstatus=?,	inv_childid =? WHERE inv_id = ?",
+      "UPDATE invoice SET inv_advance = ?, inv_special_message = ?, inv_idcardstatus = ?, inv_idhandoverstatus = ?, inv_cusid = ?, inv_createddate = ?, inv_discount = ?, inv_updatedstatus = ? WHERE inv_id = ?",
       [
         InvoiceCompleteDetail.advance,
-        "", // Empty string for inv_special_message
+        "", // inv_special_message
         InvoiceCompleteDetail.iDstatus,
-        InvoiceCompleteDetail.customerDetails.cus_id, // Assuming idStatus is a boolean value
-        formattedDate, // Format the date correctly for MySQL
+        InvoiceCompleteDetail.idHandoverStatus ? 1 : 0,
+        InvoiceCompleteDetail.customerDetails.cus_id,
+        formattedDate,
         InvoiceCompleteDetail.discount ?? 0,
         1,
         InvoiceCompleteDetail.InvoiceID,
-        InvoiceCompleteDetail.iDHandoverStatus,
-
       ]
     );
   } catch (error) {
@@ -558,7 +557,7 @@ export async function getInvoiceDetails(invoiceIdSearch) {
   try {
     // Fetch customer, invoice, equipment, and additional invoice details
     const [invoiceDetails] = await pool.query(
-      `SELECT customer.*, invoiceEquipment.*, equipment.*, invoice.inv_advance, invoice.inv_special_message, invoice.inv_idcardstatus,invoice.inv_discount, invoice.inv_createddate ,invoice.inv_completed_datetime ,equipmentCategory.* ,specialEquipment.*
+      `SELECT customer.*, invoiceEquipment.*, equipment.*, invoice.inv_advance, invoice.inv_special_message, invoice.inv_idcardstatus, invoice.inv_idhandoverstatus, invoice.inv_discount, invoice.inv_createddate, invoice.inv_completed_datetime, equipmentCategory.* ,specialEquipment.*
        FROM invoice
        LEFT JOIN customer ON customer.cus_id = invoice.inv_cusid
        LEFT JOIN invoiceEquipment ON invoice.inv_id = invoiceEquipment.inveq_invid
@@ -579,6 +578,7 @@ export async function getInvoiceDetails(invoiceIdSearch) {
         discount: null,
         invoiceSpecialmessage: null,
         idStatus: null,
+        idHandoverStatus: null,
       };
 
       function dateformatterr(dateString) {
@@ -686,6 +686,7 @@ export async function getInvoiceDetails(invoiceIdSearch) {
       invoiceObject.inv_completed_datetime =
         invoiceDetails[0].inv_completed_datetime;
       invoiceObject.discount = invoiceDetails[0].inv_discount;
+      invoiceObject.idHandoverStatus = !!invoiceDetails[0].inv_idhandoverstatus;
       return invoiceObject;
     } else {
       console.error("No invoice details found");
@@ -699,6 +700,7 @@ export async function getInvoiceDetails(invoiceIdSearch) {
 
 export async function updateInvoiceDetails(InvoiceCompleteDetail) {
   let createdDate;
+  console.log("This is the handover statis",InvoiceCompleteDetail.idHandoverStatus);
   if (InvoiceCompleteDetail.invoiceCompletedDate) {
     createdDate = dayjs(InvoiceCompleteDetail.invoiceCompletedDate)
       .tz("Asia/Colombo")
@@ -709,12 +711,13 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
   }
   try {
     await pool.query(
-      "UPDATE invoice SET inv_special_message = ?, inv_rating = ?, inv_completed_datetime = ?, inv_discount = COALESCE(?, inv_discount) WHERE inv_id = ?",
+      "UPDATE invoice SET inv_special_message = ?, inv_rating = ?, inv_completed_datetime = ?, inv_discount = COALESCE(?, inv_discount), inv_idhandoverstatus = ? WHERE inv_id = ?",
       [
         InvoiceCompleteDetail.inv_special_message,
         InvoiceCompleteDetail.inv_rating,
         createdDate,
         InvoiceCompleteDetail.discount ?? null,
+        InvoiceCompleteDetail.idHandoverStatus ? 1 : 0,
         InvoiceCompleteDetail.InvoiceID,
       ]
     );
@@ -752,7 +755,6 @@ export async function updateInvoiceDetails(InvoiceCompleteDetail) {
   // Update invoice equipment details
 
   try {
-    console.log("complete retrieved object", InvoiceCompleteDetail);
     // Function to format the date for SQL
     function formatDateForSQL(date) {
       if (!date) return null;
@@ -1345,7 +1347,7 @@ GROUP BY
         inv_createddate: revItem.inv_createddate,
         inv_completed_datetime: revItem.inv_completed_datetime,
         total_revenue: revItem.total_revenue,
-          discount: revItem.inv_discount ?? 0,
+        discount: revItem.inv_discount ?? 0,
         customer_name: matchingTotalIncome
           ? matchingTotalIncome.customer_name
           : null,
@@ -1367,139 +1369,9 @@ export async function getIncompleteInvoicesByCustomerId(customerId) {
       `SELECT inv_id FROM invoice WHERE inv_cusid = ? AND inv_completed_datetime IS NULL AND inv_delete_status = 0`,
       [customerId]
     );
-    return rows.map(row => row.inv_id);
+    return rows.map((row) => row.inv_id);
   } catch (error) {
     console.log("Error fetching incomplete invoices by customer:", error);
     return [];
-  }
-}
-
-export async function createChildCustomer(obj) {
-  const {
-    fname,
-    lname,
-    nic,
-    phoneNumber,
-    address1,
-    address2,
-    superCustomerId
-  } = obj;
-
-  try {
-    // Validation
-    if (!superCustomerId) {
-      throw new Error('Super customer ID is required');
-    }
-
-    if (!fname || !phoneNumber || !address1) {
-      throw new Error('First name, phone number, and address are required fields');
-    }
-
-    // Check if super customer exists
-    const [superCustomerResults] = await pool.query(
-      'SELECT cus_id FROM customer WHERE cus_id = ?',
-      [superCustomerId]
-    );
-
-    if (superCustomerResults.length === 0) {
-      throw new Error('Super customer not found');
-    }
-
-    // Insert child customer
-    const [insertResult] = await pool.query(
-      `INSERT INTO childCustomer 
-        (child_cus_parentid, child_cus_fname, child_cus_lname, child_cus_nic, 
-         child_cus_phone_number, child_cus_address1, child_cus_address2) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [superCustomerId, fname, lname, nic, phoneNumber, address1, address2 || null]
-    );
-
-    return {
-      success: true,
-      message: 'Child customer created successfully',
-      customerId: insertResult.insertId
-    };
-  } catch (error) {
-    console.error('Error creating child customer:', error);
-    throw error;
-  }
-}
-
-
-export async function getChildCustomersByParentId(parentId) {
-  try {
-    // Validation
-    if (!parentId) {
-      throw new Error('Parent customer ID is required');
-    }
-
-    // Query to get all child customers for a specific parent
-    const [childCustomers] = await pool.query(
-      `SELECT 
-        child_cus_id,
-        child_cus_fname,
-        child_cus_lname,
-        child_cus_nic,
-        child_cus_phone_number,
-        child_cus_address1,
-        child_cus_address2,
-        child_cus_delete_status,
-        created_at,
-        updated_at
-       FROM childCustomer 
-       WHERE child_cus_parentid = ? AND child_cus_delete_status = 0
-       ORDER BY child_cus_fname, child_cus_lname`,
-      [parentId]
-    );
-
-    return {
-      success: true,
-      data: childCustomers,
-      count: childCustomers.length
-    };
-  } catch (error) {
-    console.error('Error retrieving child customers:', error);
-    throw error;
-  }
-}
-
-// Alternative: Get child customers with parent details
-export async function getChildCustomersWithParentDetails(parentId) {
-  try {
-    if (!parentId) {
-      throw new Error('Parent customer ID is required');
-    }
-
-    const [results] = await pool.query(
-      `SELECT 
-        cc.child_cus_id,
-        cc.child_cus_fname,
-        cc.child_cus_lname,
-        cc.child_cus_nic,
-        cc.child_cus_phone_number,
-        cc.child_cus_address1,
-        cc.child_cus_address2,
-        cc.created_at,
-        cc.updated_at,
-        c.cus_id as parent_id,
-        c.cus_fname as parent_fname,
-        c.cus_lname as parent_lname,
-        c.nic as parent_nic,
-        c.cus_phone_number as parent_phone
-       FROM childCustomer cc
-       JOIN customer c ON cc.child_cus_parentid = c.cus_id
-       WHERE cc.child_cus_parentid = ? AND cc.child_cus_delete_status = 0
-       ORDER BY cc.child_cus_fname, cc.child_cus_lname`,
-      [parentId]
-    );
-
-    return {
-      success: true,
-      data: results,
-      count: results.length
-    };
-  } catch (error) {
-    console.error('Error retrieving child customers with parent details:', error);
-    throw error;
   }
 }
