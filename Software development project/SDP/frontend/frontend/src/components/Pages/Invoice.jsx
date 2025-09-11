@@ -1,23 +1,20 @@
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useState, useEffect, useRef } from "react";
 import "../Stylings/rootstyles.css";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import {
   Box,
   Button,
-  Fab,
-  FormLabel,
   Paper,
   Stack,
   TextField,
   Typography,
   Grid,
   Chip,
-  Divider,
   Alert,
 } from "@mui/material";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faUpload } from "@fortawesome/free-solid-svg-icons";
+import { faSearch } from "@fortawesome/free-solid-svg-icons";
 import {
   AuthContext,
   InvoiceContext,
@@ -37,17 +34,12 @@ import InvoiceRightSideNew from "./Invoice/InvoiceRightSideNew.jsx";
 import InvoiceHandOverForm from "./Invoice/InvoiceHandOverForm.jsx";
 import FeedbackComponent from "../SubComponents/FeedbackComponent.jsx";
 import CompleteInvoiceTable from "./Invoice/CompleteInvoiceTable.jsx";
-import InvoicePdf from "./Invoice/InvoicePdf.jsx";
 import { useTheme } from "@emotion/react";
 import { faAddressCard } from "@fortawesome/free-regular-svg-icons";
 import YoutubeSearchedForIcon from "@mui/icons-material/YoutubeSearchedFor";
 import BackspaceOutlinedIcon from "@mui/icons-material/BackspaceOutlined";
 import Swal from "sweetalert2";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
-import AddIcCallOutlinedIcon from "@mui/icons-material/AddIcCallOutlined";
-import ContactMailOutlinedIcon from "@mui/icons-material/ContactMailOutlined";
-import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
-import { InvoicePdfWarehouseHandler } from "../RoleBasedAccess/Warehouse handler/Invoice/InvoiceWarehouseHandler.jsx";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
@@ -57,40 +49,28 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const textFieldStyle = {
-  "& .MuiOutlinedInput-root": {
-    borderRadius: "12px",
-  },
+  "& .MuiOutlinedInput-root": { borderRadius: "12px" },
 };
 
 function Invoice() {
   const theme = useTheme();
   const {
-    fullDetailsEquipmentArray,
-    setFullDetailsEquipmentArray,
-    checkState,
-    setCheckState,
     setPaymentArray,
     eqObject,
     setEqObject,
     invoiceSearchBtnStatus,
     setInvoiceSearchBtnStatus,
     invoiceObject,
-    setInvoiceObject,
     clearObject,
     updateValue,
-    clearValues,
     buttonDesable,
     setButtonDisable,
-    updateEqObject,
   } = useContext(InvoiceContext);
-  const { showAlert } = useContext(SwalContext);
 
+  const { showAlert } = useContext(SwalContext);
   const navigate = useNavigate();
   const { setIsAuthenticated } = useContext(AuthContext);
-
-  // PopupContext handlers for payments dialog
-  const { boolvalue, setBoolvalue, userData, setUserData } =
-    useContext(PopupContext);
+  const { setBoolvalue } = useContext(PopupContext);
 
   const [phoneNumberorNic, setPhoneNumberorNic] = useState("");
   const [invoiceId, setInvoiceId] = useState("0000");
@@ -111,48 +91,218 @@ function Invoice() {
     cus_id: "",
   });
 
-  const [clearData, setClearData] = useState({
+  const clearData = {
     cus_fname: "",
     cus_address1: "",
     cus_address2: "",
     nic: "",
     cus_phone_number: "",
     Cus: "",
-  });
+  };
 
-  // Additions for customer invoice count and incomplete invoice IDs
+  // stats
   const [numberOfInvoices, setNumberOfInvoices] = useState(0);
   const [incompleteInvoiceIds, setIncompleteInvoiceIds] = useState([]);
+
+  // === server snapshot to diff unsaved edits (including handover) ===
+  const originalInvoiceRef = useRef(null);
+  const detailsDownRef = useRef(null);
+
+  const deepClone = (o) => JSON.parse(JSON.stringify(o ?? null));
+  const toNumber = (v) =>
+    v === undefined || v === null || v === "" || isNaN(Number(v))
+      ? 0
+      : Number(v);
+  const sum = (arr, sel) =>
+    (arr || []).reduce((a, c) => a + toNumber(sel(c)), 0);
+  const fmtLKR = (n) => `${toNumber(n).toLocaleString("en-LK")} LKR`;
+  const safeLen = (a) => (Array.isArray(a) ? a.length : 0);
+
+  // Remove trailing index/ID artifacts from equipment labels for cleaner display
+  const cleanEqName = (name = "") =>
+    String(name)
+      .replace(/\s*-\s*\d+\s*$/g, "") // trailing " - 123"
+      .replace(/\s*\(ID[:#]?\s*\d+\)\s*$/gi, "") // "(ID: 123)" or "(ID 123)"
+      .trim();
+
+  const captureOriginalFromServer = (respData) => {
+    originalInvoiceRef.current = {
+      InvoiceID: respData?.InvoiceID,
+      advance: respData?.advance ?? 0,
+      discount: respData?.discount ?? 0,
+      idStatus: respData?.idStatus ?? 0,
+      idHandoverStatus: respData?.idHandoverStatus ?? 0,
+      inv_completed_datetime: respData?.inv_completed_datetime ?? null,
+      customerDetails: deepClone(respData?.customerDetails),
+      eqdetails: deepClone(respData?.eqdetails || []),
+      payments: deepClone(respData?.payments || []),
+      createdDate: respData?.createdDate ?? null,
+    };
+  };
+
+  // === compute changes (SECTIONED + cleaned names) ===
+  const computeInvoiceChanges = (prev, curr) => {
+    const ch = {
+      basics: [],
+      customer: [],
+      id: [],
+      equipment: [],
+      payments: [],
+      completion: [],
+    };
+    if (!prev || !curr) return ch;
+
+    const push = (k, text) => ch[k].push(text);
+
+    // Basics
+    if (toNumber(prev.advance) !== toNumber(curr.advance)) {
+      push(
+        "basics",
+        `Advance: ${fmtLKR(prev.advance)} → ${fmtLKR(curr.advance)}`
+      );
+    }
+    if (toNumber(prev.discount) !== toNumber(curr.discount)) {
+      push(
+        "basics",
+        `Discount: ${fmtLKR(prev.discount)} → ${fmtLKR(curr.discount)}`
+      );
+    }
+    if ((prev.createdDate || "") !== (curr.createdDate || "")) {
+      push(
+        "basics",
+        `Created date: ${prev.createdDate || "—"} → ${curr.createdDate || "—"}`
+      );
+    }
+
+    // Customer
+    const pC = prev.customerDetails || {};
+    const cC = curr.customerDetails || {};
+    if (
+      (pC.cus_fname || "") !== (cC.cus_fname || "") ||
+      (pC.cus_lname || "") !== (cC.cus_lname || "")
+    ) {
+      push(
+        "customer",
+        `Customer name: ${
+          (pC.cus_fname || "") + " " + (pC.cus_lname || "")
+        } → ${(cC.cus_fname || "") + " " + (cC.cus_lname || "")}`
+      );
+    }
+    if ((pC.cus_phone_number || "") !== (cC.cus_phone_number || "")) {
+      push(
+        "customer",
+        `Phone: ${pC.cus_phone_number || "—"} → ${cC.cus_phone_number || "—"}`
+      );
+    }
+
+    // ID flows
+    const prevId = Number(prev.idStatus) === 1;
+    const currId = Number(curr.idStatus ?? curr.iDstatus) === 1;
+    if (prevId !== currId) {
+      push(
+        "id",
+        `ID collected: ${prevId ? "Yes" : "No"} → ${currId ? "Yes" : "No"}`
+      );
+    }
+    const prevHand = Number(prev.idHandoverStatus) === 1;
+    const currHand = Number(curr.idHandoverStatus) === 1;
+    if (prevHand !== currHand) {
+      push(
+        "id",
+        `ID handed over: ${prevHand ? "Yes" : "No"} → ${
+          currHand ? "Yes" : "No"
+        }`
+      );
+    }
+
+    // Equipment differences (including handover)
+    const pList = Array.isArray(prev.eqdetails) ? prev.eqdetails : [];
+    const cList = Array.isArray(curr.eqdetails) ? curr.eqdetails : [];
+    const pMap = new Map(pList.map((e) => [String(e.eq_id), e]));
+    const cMap = new Map(cList.map((e) => [String(e.eq_id), e]));
+
+    if (pList.length !== cList.length) {
+      push("equipment", `Equipment count: ${pList.length} → ${cList.length}`);
+    }
+
+    const pendingCount = (list) =>
+      list.filter((e) => e?.inveq_return_date == null).length;
+    const pPending = pendingCount(pList);
+    const cPending = pendingCount(cList);
+    if (pPending !== cPending) {
+      push("equipment", `Pending items: ${pPending} → ${cPending}`);
+    }
+
+    cMap.forEach((cEq, id) => {
+      const pEq = pMap.get(id);
+      if (!pEq) {
+        push(
+          "equipment",
+          `Equipment added: ${cleanEqName(cEq.eq_name || `EQ#${id}`)}`
+        );
+        return;
+      }
+      const pQty = toNumber(pEq.inveq_return_quantity);
+      const cQty = toNumber(cEq.inveq_return_quantity);
+      const pDate = pEq.inveq_return_date || "";
+      const cDate = cEq.inveq_return_date || "";
+
+      if (pQty !== cQty || pDate !== cDate) {
+        const name = cleanEqName(cEq.eq_name || pEq.eq_name || `EQ#${id}`);
+        const qtyPart = pQty !== cQty ? `qty ${pQty} → ${cQty}` : null;
+        const datePart =
+          pDate !== cDate ? `date ${pDate || "—"} → ${cDate || "—"}` : null;
+        const parts = [qtyPart, datePart].filter(Boolean).join(", ");
+        push("equipment", `Handover updated: ${name} (${parts})`);
+      }
+    });
+
+    // Payments summary
+    const prevPTotal = sum(prev.payments, (p) => p.invpay_amount);
+    const currPTotal = sum(curr.payments, (p) => p.invpay_amount);
+    if ((prev.payments || []).length !== (curr.payments || []).length) {
+      push(
+        "payments",
+        `Payments count: ${safeLen(prev.payments)} → ${safeLen(curr.payments)}`
+      );
+    }
+    if (toNumber(prevPTotal) !== toNumber(currPTotal)) {
+      push(
+        "payments",
+        `Payments total: ${fmtLKR(prevPTotal)} → ${fmtLKR(currPTotal)}`
+      );
+    }
+
+    // Completion state
+    const prevDone = !!prev.inv_completed_datetime;
+    const currDone = !!curr.inv_completed_datetime;
+    if (prevDone !== currDone) {
+      push(
+        "completion",
+        `Completion: ${prevDone ? "Completed" : "Open"} → ${
+          currDone ? "Completed" : "Open"
+        }`
+      );
+    }
+
+    return ch;
+  };
 
   useEffect(() => {}, [invoiceObject]);
   useEffect(() => {
     handleCreateNew();
   }, []);
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentDateTime(new Date());
-    }, 1000);
-    return () => clearInterval(interval);
+    const t = setInterval(() => setCurrentDateTime(new Date()), 1000);
+    return () => clearInterval(t);
   }, []);
 
-  const isValidId = (id) => {
-    const validIdFormat = /^\d{1,4}$/;
-    return validIdFormat.test(id) && parseInt(id) < 10000;
-  };
-
-  const isValidNIC = (nic) => {
-    const nineDigitsAndV = /^[0-9]{9}v$/i;
-    const twelveDigits = /^[0-9]{12}$/;
-    return nineDigitsAndV.test(nic) || twelveDigits.test(nic);
-  };
-
+  const isValidId = (id) => /^\d{1,4}$/.test(id) && parseInt(id) < 10000;
+  const isValidNIC = (nic) =>
+    /^[0-9]{9}v$/i.test(nic) || /^[0-9]{12}$/.test(nic);
   const isValidPhoneNumber = (phoneNumber) => {
     phoneNumber = phoneNumber.replace(/[-\s]/g, "").trim();
-    const validFormatCheck1 = /^[1-9]\d{8}$/;
-    const validFormatCheck2 = /^[0]\d{9}$/;
-    return (
-      validFormatCheck1.test(phoneNumber) || validFormatCheck2.test(phoneNumber)
-    );
+    return /^[1-9]\d{8}$/.test(phoneNumber) || /^[0]\d{9}$/.test(phoneNumber);
   };
 
   const handleSearchPhoneNumberorNic = async () => {
@@ -162,9 +312,7 @@ function Invoice() {
       setIncompleteInvoiceIds([]);
       return;
     }
-
     const trimmedValue = phoneNumberorNic.trim();
-
     if (
       !isValidNIC(trimmedValue) &&
       !isValidPhoneNumber(trimmedValue) &&
@@ -177,26 +325,16 @@ function Invoice() {
     }
 
     setValidationMessage("");
-
     try {
-      let res;
-      if (isValidId(trimmedValue)) {
-        res = await axios.get(
-          `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
-        );
-      } else {
-        res = await axios.get(
-          `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
-        );
-      }
-
+      const res = await axios.get(
+        `http://localhost:8085/getCustomerbyPhoneNumberOrNic/${trimmedValue}`
+      );
       const data = res.data;
 
       if (Array.isArray(data) && data.length > 0) {
         setData(data[0]);
         updateValue("customerDetails", data[0]);
 
-        // Fetch number_of_invoices
         try {
           const id = data[0].cus_id;
           const cusInvoiceCount = await axios.get(
@@ -209,60 +347,37 @@ function Invoice() {
               ? cusInvoiceCount.data.response[0].number_of_invoices
               : 0;
           setNumberOfInvoices(count ?? 0);
-        } catch (err) {
+        } catch {
           setNumberOfInvoices(0);
         }
 
-        // Fetch incomplete invoice IDs
         try {
           const id = data[0].cus_id;
           const resIncomplete = await axios.get(
             `http://localhost:8085/customer/incompleteInvoices/${id}`
           );
           setIncompleteInvoiceIds(resIncomplete.data.invoiceIds || []);
-        } catch (err) {
+        } catch {
           setIncompleteInvoiceIds([]);
         }
       } else if (data.message) {
         setValidationMessage(
           "No customer found with this ID, phone number, or NIC"
         );
-        setData({
-          cus_fname: "",
-          cus_address1: "",
-          cus_address2: "",
-          nic: "",
-          cus_phone_number: "",
-          cus_id: "",
-        });
+        setData({ ...clearData, cus_id: "" });
         updateValue("customerDetails", clearData);
         setNumberOfInvoices(0);
         setIncompleteInvoiceIds([]);
       } else {
-        console.error("Unexpected response format:", data);
         setValidationMessage("Unexpected error occurred");
-        setData({
-          cus_fname: "",
-          cus_address1: "",
-          cus_address2: "",
-          nic: "",
-          cus_phone_number: "",
-          cus_id: "",
-        });
+        setData({ ...clearData, cus_id: "" });
         updateValue("customerDetails", clearData);
         setNumberOfInvoices(0);
         setIncompleteInvoiceIds([]);
       }
     } catch (error) {
       setValidationMessage("Error occurred in front end");
-      setData({
-        cus_fname: "",
-        cus_address1: "",
-        cus_address2: "",
-        nic: "",
-        cus_phone_number: "",
-        cus_id: "",
-      });
+      setData({ ...clearData, cus_id: "" });
       updateValue("customerDetails", clearData);
       setNumberOfInvoices(0);
       setIncompleteInvoiceIds([]);
@@ -282,35 +397,137 @@ function Invoice() {
     setUpdateBtnStatus(false);
     setNumberOfInvoices(0);
     setIncompleteInvoiceIds([]);
+    originalInvoiceRef.current = null;
+
     try {
-      await axios.get("http://localhost:8085/invoiceIdRetrieve").then((res) => {
-        setInvoiceId(res.data);
-        updateValue("InvoiceID", res.data);
-        updateValue("createdDate", currentDate);
-        updateValue("discount", 0);
-      });
+      const res = await axios.get("http://localhost:8085/invoiceIdRetrieve");
+      setInvoiceId(res.data);
+      updateValue("InvoiceID", res.data);
+      updateValue("createdDate", currentDate);
+      updateValue("discount", 0);
     } catch (error) {
       console.log("handleSearch Createinvoice error", error);
     }
   };
 
+  // === Guarded Create New (sectioned modal, no item numbers) ===
+  const handleCreateNewGuarded = async () => {
+    try {
+      if (invoiceSearchBtnStatus && originalInvoiceRef.current) {
+        const currentSnapshot = deepClone(invoiceObject);
+        const ch = computeInvoiceChanges(
+          originalInvoiceRef.current,
+          currentSnapshot
+        );
+
+        const sections = [
+          { key: "equipment", title: "Equipment handover", icon: "🧰" },
+          { key: "payments", title: "Payments", icon: "💵" },
+          { key: "id", title: "ID Card", icon: "🪪" },
+          { key: "customer", title: "Customer", icon: "👤" },
+          { key: "basics", title: "Invoice", icon: "🧾" },
+          { key: "completion", title: "Status", icon: "✅" },
+        ];
+
+        const hasAny = sections.some((s) => (ch[s.key] || []).length > 0);
+
+        if (hasAny) {
+          const MAX_PER_SECTION = 6;
+          const renderSection = ({ key, title, icon }) => {
+            const list = ch[key] || [];
+            if (list.length === 0) return "";
+            const more =
+              list.length > MAX_PER_SECTION
+                ? `<li class="chg-more">… +${
+                    list.length - MAX_PER_SECTION
+                  } more</li>`
+                : "";
+            return `
+              <div class="chg-sec">
+                <div class="chg-sec-h">${icon} ${title}</div>
+                <ul class="chg-ul">${list
+                  .slice(0, MAX_PER_SECTION)
+                  .map((t) => `<li>${t}</li>`)
+                  .join("")}${more}</ul>
+              </div>
+            `;
+          };
+
+          const html = `
+            <style>
+              .chg-wrap { text-align:left; font-size:14px; }
+              .chg-header { margin:0 0 10px 0; color:#555; }
+              .chg-sec { border-top:1px solid #eee; padding:10px 0; }
+              .chg-sec:first-of-type { border-top:none; }
+              .chg-sec-h { font-weight:600; margin-bottom:6px; color:#333; }
+              .chg-ul { margin:0; padding-left:18px; }
+              .chg-ul li { margin:4px 0; }
+              .chg-more { color:#777; font-style:italic; }
+            </style>
+            <div class="chg-wrap">
+              <div class="chg-header">
+                These changes were detected on invoice <b>#${
+                  originalInvoiceRef.current.InvoiceID
+                }</b>:
+              </div>
+              ${sections.map(renderSection).join("")}
+              <div class="chg-header" style="margin-top:8px;">What would you like to do?</div>
+            </div>
+          `;
+
+          const result = await Swal.fire({
+            title: "Unsaved changes",
+            html,
+            icon: "warning",
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: "Update invoice",
+            denyButtonText: "Complete invoice",
+            cancelButtonText: "Discard & create new",
+            reverseButtons: true,
+            width: 680,
+          });
+
+          if (result.isConfirmed) {
+            if (detailsDownRef.current?.updateInvoice) {
+              await detailsDownRef.current.updateInvoice();
+            }
+            return;
+          } else if (result.isDenied) {
+            if (detailsDownRef.current?.completeInvoice) {
+              await detailsDownRef.current.completeInvoice();
+            }
+            return;
+          } else {
+            await handleCreateNew();
+            return;
+          }
+        }
+      }
+      await handleCreateNew();
+    } catch (e) {
+      console.error(e);
+      await handleCreateNew();
+    }
+  };
+
   const handleInvoiceSearch = async (invoiceIdSearch) => {
     clearObject();
-
     try {
       const response = await axios.get(
         `http://localhost:8085/invoiceDataRetrieve/${invoiceIdSearch}`
       );
-console.log(response)
+
       if (response.status === 200) {
         setInvoiceSearchBtnStatus(true);
+
         updateValue("advance", response.data.advance);
         updateValue("createdDate", response.data.createdDate);
-        response.data.payments.forEach((payment) => {
+        (response.data.payments || []).forEach((payment) => {
           updateValue("payments", payment);
         });
         updateValue("customerDetails", response.data.customerDetails);
-        // Populate counts for this customer when searching by invoice ID
+
         try {
           const id = response.data.customerDetails?.cus_id;
           if (id) {
@@ -325,7 +542,7 @@ console.log(response)
                   ? cusInvoiceCount.data.response[0].number_of_invoices
                   : 0;
               setNumberOfInvoices(count ?? 0);
-            } catch (err) {
+            } catch {
               setNumberOfInvoices(0);
             }
 
@@ -334,20 +551,22 @@ console.log(response)
                 `http://localhost:8085/customer/incompleteInvoices/${id}`
               );
               setIncompleteInvoiceIds(resIncomplete.data.invoiceIds || []);
-            } catch (err) {
+            } catch {
               setIncompleteInvoiceIds([]);
             }
           } else {
             setNumberOfInvoices(0);
             setIncompleteInvoiceIds([]);
           }
-        } catch (e) {
+        } catch {
           setNumberOfInvoices(0);
           setIncompleteInvoiceIds([]);
         }
-        response.data.eqdetails.forEach((eqdetail) => {
+
+        (response.data.eqdetails || []).forEach((eqdetail) => {
           updateValue("eqdetails", eqdetail);
         });
+
         updateValue("InvoiceID", response.data.InvoiceID);
         updateValue("iDstatus", response.data.idStatus);
         updateValue("discount", response.data.discount ?? 0);
@@ -355,7 +574,10 @@ console.log(response)
           "inv_completed_datetime",
           response.data.inv_completed_datetime
         );
-        updateValue('idHandoverStatus', response.data.idHandoverStatus);
+        updateValue("idHandoverStatus", response.data.idHandoverStatus);
+
+        // Capture clean snapshot (used by the guard)
+        captureOriginalFromServer(response.data);
         setUpdateBtnStatus(true);
       } else if (response.status === 404) {
         await Swal.fire({
@@ -402,11 +624,7 @@ console.log(response)
       confirmButtonColor: "#d33",
       cancelButtonColor: "#3085d6",
       confirmButtonText: "Yes, Proceed!",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        navigate("/customers");
-      }
-    });
+    }).then((r) => r.isConfirmed && navigate("/customers"));
   };
 
   const handleDownload = () => {
@@ -419,11 +637,6 @@ console.log(response)
       doc.addImage(imgData, "PNG", 0, 0, componentWidth, componentHeight);
       doc.save("recipt.pdf");
     });
-  };
-
-  // Payment button handler
-  const handleProceedPayment = () => {
-    setBoolvalue(true);
   };
 
   return (
@@ -439,6 +652,7 @@ console.log(response)
           pl: 1,
         }}
       >
+        {/* Top bar */}
         <Box
           sx={{
             backgroundColor: (theme) => theme.palette.primary[50],
@@ -464,10 +678,9 @@ console.log(response)
                   ).toLocaleString()}
                 </Typography>
               </>
-            ) : (
-              ""
-            )}
+            ) : null}
           </Box>
+
           <Box
             component="form"
             onSubmit={(e) => {
@@ -496,6 +709,7 @@ console.log(response)
               <YoutubeSearchedForIcon />
             </Button>
           </Box>
+
           <Box
             sx={{
               display: "flex",
@@ -505,7 +719,8 @@ console.log(response)
               gap: 2,
             }}
           >
-            <Button onClick={handleCreateNew} variant="contained">
+            {/* Guarded button */}
+            <Button onClick={handleCreateNewGuarded} variant="contained">
               Create new
             </Button>
             <Box sx={{ width: "180px" }}>
@@ -519,18 +734,8 @@ console.log(response)
           </Box>
         </Box>
 
-
-
-
-
-
-        <Box
-          sx={{
-            display: "flex",
-            width: "100%",
-            height: "55vh",
-          }}
-        >
+        {/* Middle section */}
+        <Box sx={{ display: "flex", width: "100%", height: "55vh" }}>
           <Box
             sx={{
               display: "flex",
@@ -539,12 +744,13 @@ console.log(response)
               width: "23.6%",
             }}
           >
-            {updateBtnStatus == true ? (
+            {updateBtnStatus ? (
               <InvoiceHandOverForm />
             ) : (
               <InvoiceRightSideNew />
             )}
           </Box>
+
           <Box
             sx={{
               display: "flex",
@@ -581,6 +787,7 @@ console.log(response)
                   }}
                 />
               </Box>
+
               <Box
                 sx={{
                   display: "flex",
@@ -643,12 +850,11 @@ console.log(response)
                       setNumberOfInvoices(0);
                       setIncompleteInvoiceIds([]);
                     }}
-                    sx={{
-                      color: (theme) => theme.palette.primary.error[400],
-                    }}
+                    sx={{ color: (theme) => theme.palette.primary.error[400] }}
                   >
                     <BackspaceOutlinedIcon />
                   </Button>
+
                   <Box flexGrow={1} />
                   <Button
                     variant="outlined"
@@ -659,13 +865,24 @@ console.log(response)
                       p: 0,
                     }}
                     size="small"
-                    onClick={handleAdvanceSearch}
+                    onClick={() =>
+                      Swal.fire({
+                        title: "Redirect to the customer page?",
+                        text: "Your current work will be lost!",
+                        icon: "warning",
+                        showCancelButton: true,
+                        confirmButtonColor: "#d33",
+                        cancelButtonColor: "#3085d6",
+                        confirmButtonText: "Yes, Proceed!",
+                      }).then((r) => r.isConfirmed && navigate("/customers"))
+                    }
                   >
                     <Typography variant="caption">
                       <PersonSearchIcon />
                     </Typography>
                   </Button>
                 </Box>
+
                 {incompleteInvoiceIds.length > 0 && (
                   <Alert severity="warning" sx={{ mt: 1 }}>
                     Incomplete Invoice IDs: {incompleteInvoiceIds.join(", ")}
@@ -686,7 +903,8 @@ console.log(response)
                           Full Name
                         </Typography>
                         <Typography variant="body1">
-                          {invoiceObject.customerDetails.cus_fname && invoiceObject.customerDetails.cus_lname
+                          {invoiceObject.customerDetails.cus_fname &&
+                          invoiceObject.customerDetails.cus_lname
                             ? `${invoiceObject.customerDetails.cus_fname} ${invoiceObject.customerDetails.cus_lname}`
                             : invoiceObject.customerDetails.cus_fname || "—"}
                         </Typography>
@@ -697,7 +915,8 @@ console.log(response)
                           Phone
                         </Typography>
                         <Typography variant="body1">
-                          {invoiceObject.customerDetails.cus_phone_number ?? "—"}
+                          {invoiceObject.customerDetails.cus_phone_number ??
+                            "—"}
                         </Typography>
                       </Grid>
 
@@ -706,7 +925,8 @@ console.log(response)
                           Address
                         </Typography>
                         <Typography variant="body1">
-                          {invoiceObject.customerDetails.cus_address1 && invoiceObject.customerDetails.cus_address2
+                          {invoiceObject.customerDetails.cus_address1 &&
+                          invoiceObject.customerDetails.cus_address2
                             ? `${invoiceObject.customerDetails.cus_address1} ${invoiceObject.customerDetails.cus_address2}`
                             : invoiceObject.customerDetails.cus_address1 || "—"}
                         </Typography>
@@ -725,24 +945,44 @@ console.log(response)
                         <Typography variant="caption" color="text.secondary">
                           Invoices
                         </Typography>
-                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          useFlexGap
+                          flexWrap="wrap"
+                          alignItems="center"
+                        >
                           <Chip
                             size="small"
                             icon={<InsertDriveFileIcon fontSize="small" />}
                             label={`Total: ${numberOfInvoices ?? 0}`}
                             sx={{
-                              bgcolor: numberOfInvoices > 5 ? "#e6f4ea" : "#f5f5f5",
-                              color: numberOfInvoices >= 5 ? "#019301ff" : "#717171ff",
+                              bgcolor:
+                                numberOfInvoices > 5 ? "#e6f4ea" : "#f5f5f5",
+                              color:
+                                numberOfInvoices >= 5
+                                  ? "#019301ff"
+                                  : "#717171ff",
                             }}
                           />
                           <Chip
                             size="small"
-                            label={`Completed: ${Math.max((numberOfInvoices || 0) - ((incompleteInvoiceIds && incompleteInvoiceIds.length) || 0), 0)}`}
+                            label={`Completed: ${Math.max(
+                              (numberOfInvoices || 0) -
+                                ((incompleteInvoiceIds &&
+                                  incompleteInvoiceIds.length) ||
+                                  0),
+                              0
+                            )}`}
                             variant="outlined"
                           />
                           <Chip
                             size="small"
-                            label={`Pending: ${(incompleteInvoiceIds && incompleteInvoiceIds.length) || 0}`}
+                            label={`Pending: ${
+                              (incompleteInvoiceIds &&
+                                incompleteInvoiceIds.length) ||
+                              0
+                            }`}
                             color="warning"
                             variant="outlined"
                           />
@@ -752,6 +992,7 @@ console.log(response)
                   </Paper>
                 </Box>
 
+                {/* Action row */}
                 <Box
                   sx={{
                     display: "flex",
@@ -764,7 +1005,7 @@ console.log(response)
                     disabled={buttonDesable}
                     customvariant="custom"
                     variant="contained"
-                    onClick={handleProceedPayment}
+                    onClick={() => setBoolvalue(true)}
                   >
                     Payments
                   </Button>
@@ -775,6 +1016,8 @@ console.log(response)
               </Box>
             </Paper>
           </Box>
+
+          {/* Right column */}
           <Box
             sx={{
               display: "flex",
@@ -787,25 +1030,10 @@ console.log(response)
           </Box>
         </Box>
 
-
-
-
-
-
-
-
-
-
-
-
-
+        {/* Bottom section */}
         <Box
           minHeight={300}
-          sx={{
-            display: "flex",
-            width: "100%",
-            height: "37vh",
-          }}
+          sx={{ display: "flex", width: "100%", height: "37vh" }}
         >
           <Box
             sx={{
@@ -838,23 +1066,23 @@ console.log(response)
             }}
           >
             <InvoiceDetailsWindowDown
+              ref={detailsDownRef}
               handleCreateNew={handleCreateNew}
               updateBtnStatus={updateBtnStatus}
               setUpdateBtnStatus={setUpdateBtnStatus}
               handleInvoiceSearch={handleInvoiceSearch}
+              onSyncedFromServer={(serverData) =>
+                (originalInvoiceRef.current = deepClone(serverData))
+              }
             />
           </Box>
         </Box>
       </Box>
-      {/* <InvoicePdfWarehouseHandler/> */}
+
+      {/* Payments modal */}
       <OverlayDialogBox>
         <Payments handleInvoiceSearch={handleInvoiceSearch} />
       </OverlayDialogBox>
-      {/* {isInvoiceUpdateFormShow && (
-        <InvoiceUpdateForm
-          setIsInvoiceUpdateFormShow={setIsInvoiceUpdateFormShow} isInvoiceUpdateFormShow={isInvoiceUpdateFormShow}
-        />
-      )} */}
     </>
   );
 }

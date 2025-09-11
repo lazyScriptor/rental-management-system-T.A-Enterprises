@@ -16,13 +16,8 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import Swal from "sweetalert2";
 
 function InvoiceHandOverForm() {
-  const [idFormData, setIdFormData] = useState({
-    id: "",
-  });
-  const [formData, setFormData] = useState({
-    name: "",
-    quantity: "",
-  });
+  const [idFormData, setIdFormData] = useState({ id: "" });
+  const [formData, setFormData] = useState({ name: "", quantity: "" });
   const [idErrors, setIdErrors] = useState({});
   const [eqErrors, setEqErrors] = useState({});
   const [eqQuantity, setEqQuantity] = useState(0);
@@ -33,15 +28,12 @@ function InvoiceHandOverForm() {
 
   function dateformatter() {
     const createdDate = new Date();
-
     const year = createdDate.getFullYear();
     const month = String(createdDate.getMonth() + 1).padStart(2, "0");
     const day = String(createdDate.getDate()).padStart(2, "0");
-
     const hours = String(createdDate.getHours()).padStart(2, "0");
     const minutes = String(createdDate.getMinutes()).padStart(2, "0");
     const seconds = String(createdDate.getSeconds()).padStart(2, "0");
-
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
@@ -67,7 +59,6 @@ function InvoiceHandOverForm() {
       : [];
   }, [invoiceObject]);
 
-  // Determine if all equipments on this invoice have been handed over
   const allHandedOver = React.useMemo(() => {
     const list = invoiceObject?.eqdetails || [];
     if (!Array.isArray(list) || list.length === 0) return false;
@@ -78,7 +69,6 @@ function InvoiceHandOverForm() {
     );
   }, [invoiceObject]);
 
-  // Propagate this state to any outer consumers (optional)
   useEffect(() => {
     if (typeof setButtonDisable === "function") {
       setButtonDisable(allHandedOver);
@@ -87,18 +77,12 @@ function InvoiceHandOverForm() {
 
   const handleIdChange = (e) => {
     const { name, value } = e.target;
-    setIdFormData({
-      ...idFormData,
-      [name]: value,
-    });
+    setIdFormData({ ...idFormData, [name]: value });
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
+    setFormData({ ...formData, [name]: value });
   };
 
   const handleReset = () => {
@@ -113,7 +97,7 @@ function InvoiceHandOverForm() {
 
   const handleSubmitId = (e) => {
     e.preventDefault();
-    if (allHandedOver) return; // Do nothing if everything is already handed over
+    if (allHandedOver) return;
     setEqErrors({});
     const validationErrors = {};
 
@@ -125,21 +109,18 @@ function InvoiceHandOverForm() {
     setIdErrors(validationErrors);
 
     if (Object.keys(validationErrors).length === 0) {
-      // Search for the equipment details in invoiceObject
       const equipment = invoiceObject.eqdetails.find(
         (item) =>
           item.eq_id == parseInt(idFormData.id.trim()) &&
           item.inveq_return_date == null
       );
       if (equipment) {
-        // Set equipment details to state
         setEqName(equipment.eq_name);
-        setEqQuantity(equipment.inveq_borrowqty); // Assuming quantity is available in the equipment object
+        setEqQuantity(equipment.inveq_borrowqty);
         setAddButtonDisable(false);
       } else {
         setEqName("");
         setEqQuantity(0);
-        // Handle case when equipment is not found
       }
     }
   };
@@ -173,14 +154,13 @@ function InvoiceHandOverForm() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (allHandedOver) return; // Do nothing if everything is already handed over
+    if (allHandedOver) return;
     const validationErrors = validateForm();
     setEqErrors(validationErrors);
 
     if (Object.keys(validationErrors).length === 0) {
       const currentDate = dateformatter();
 
-      // Find the equipment in the invoiceObject where inveq_return_quantity is 0
       const index = invoiceObject.eqdetails.findIndex(
         (item) =>
           item.eq_id == parseInt(idFormData.id.trim()) &&
@@ -188,45 +168,30 @@ function InvoiceHandOverForm() {
       );
 
       if (index !== -1) {
-        // Clone the equipment object to avoid mutating the original state directly
         const updatedEquipment = { ...invoiceObject.eqdetails[index] };
-
-        // Add additional key-value pairs
         updatedEquipment.inveq_return_quantity = parseInt(formData.quantity);
         updatedEquipment.inveq_return_date = currentDate;
 
-        // Update the equipment in the invoiceObject
         const updatedInvoiceObject = { ...invoiceObject };
         updatedInvoiceObject.eqdetails[index] = updatedEquipment;
 
-        // Set the updated invoiceObject state
         setInvoiceObject(updatedInvoiceObject);
-
-        // Reset form data
         setFormData({ name: "", quantity: "" });
       } else {
-        // Handle case when equipment is not found
-        console.error(
-          "Equipment not found in invoiceObject or already returned"
-        );
+        console.error("Equipment not found in invoiceObject or already returned");
       }
     }
   };
 
   const handleEquipmentClick = async (equipment) => {
     if (allHandedOver) return;
-
     const maxQty = Number(equipment?.inveq_borrowqty || 0);
     const { value: qty, isConfirmed } = await Swal.fire({
       title: `Return quantity for ${equipment?.eq_name || "equipment"}`,
       text: `Borrowed: ${maxQty}`,
       input: "number",
       inputLabel: "Quantity to return",
-      inputAttributes: {
-        min: 1,
-        max: maxQty,
-        step: 1,
-      },
+      inputAttributes: { min: 1, max: maxQty, step: 1 },
       inputValue: maxQty > 0 ? maxQty : 1,
       showCancelButton: true,
       confirmButtonText: "Confirm",
@@ -247,7 +212,6 @@ function InvoiceHandOverForm() {
     if (!isConfirmed) return;
 
     const currentDate = dateformatter();
-    // Find target index in invoiceObject.eqdetails
     const index = (invoiceObject?.eqdetails || []).findIndex(
       (item) => item?.eq_id == equipment?.eq_id && item?.inveq_return_date == null
     );
@@ -264,10 +228,7 @@ function InvoiceHandOverForm() {
   };
 
   return (
-    <Paper
-      sx={{ height: "55vh", width: "100%", p: 2, borderRadius: 4 }}
-      elevation={3}
-    >
+    <Paper sx={{ height: "55vh", width: "100%", p: 2, borderRadius: 4 }} elevation={3}>
       <Box>
         <Typography>Equipment Form</Typography>
         <hr />
@@ -295,6 +256,7 @@ function InvoiceHandOverForm() {
           </Typography>
         )}
       </Box>
+
       {!allHandedOver && (
         <Box sx={{ mt: 2 }}>
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -313,10 +275,7 @@ function InvoiceHandOverForm() {
                   fullWidth
                   disabled={buttonDesable}
                   onClick={() => handleEquipmentClick(eq)}
-                  sx={{
-                    justifyContent: "space-between",
-                    textTransform: "none",
-                  }}
+                  sx={{ justifyContent: "space-between", textTransform: "none" }}
                 >
                   <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
                     <Typography variant="body2">{eq.eq_name}</Typography>

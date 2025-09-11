@@ -1,4 +1,11 @@
-// frontend/src/components/Pages/Invoice/InvoiceDetailsWindowDown.jsx
+import React, {
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import {
   Box,
   Paper,
@@ -13,11 +20,13 @@ import {
   Stack,
   Divider,
 } from "@mui/material";
-import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useTheme } from "@mui/material/styles";
-
 import axios from "axios";
 import Swal from "sweetalert2";
+
+import {
+  InvoiceContext,
+} from "../../../Contexts/Contexts.jsx";
 
 // Actions / status icons
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
@@ -34,15 +43,9 @@ import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalance
 
 import { InvoicePdfWarehouseHandler } from "../../RoleBasedAccess/Warehouse handler/Invoice/InvoiceWarehouseHandler.jsx";
 import TemporaryBill from "../../SubComponents/TemporaryBill.jsx";
-import { InvoiceContext } from "../../../Contexts/Contexts.jsx";
 
-/**
- * Completion policy toggles
- * Set this to true if you want to BLOCK completion until the balance is 0.
- */
 const REQUIRE_ZERO_BALANCE = false;
 
-/** Normalize truthy values coming from DB / backend / UI */
 const toBool = (v) => {
   if (v === true) return true;
   if (v === false) return false;
@@ -52,16 +55,20 @@ const toBool = (v) => {
   return !!v;
 };
 
-function InvoiceDetailsWindowDown(props) {
+const InvoiceDetailsWindowDown = forwardRef(function InvoiceDetailsWindowDown(
+  {
+    updateBtnStatus,
+    setUpdateBtnStatus,
+    handleInvoiceSearch,
+    onSyncedFromServer, // optional: parent can update its snapshot after saves/completion
+  },
+  ref
+) {
   const theme = useTheme();
   const [openDialog, setOpenDialog] = useState(false);
   const [openOtherDialog, setOpenOtherDialog] = useState(false);
-
-  // Discount state and helpers
   const [discountInput, setDiscountInput] = useState(0);
   const [netPayable, setNetPayable] = useState(0);
-
-  const { updateBtnStatus, setUpdateBtnStatus, handleInvoiceSearch } = props;
 
   const {
     invoiceSearchBtnStatus,
@@ -98,22 +105,17 @@ function InvoiceDetailsWindowDown(props) {
     [invoiceObject?.inv_completed_datetime]
   );
 
-  /** Robust ID kept / handover detection (handles iDstatus vs idStatus, 0/1 vs bools) */
   const idKeptNotHandedOver = useMemo(() => {
-    // Kept can arrive as: idStatus, iDstatus, inv_idcardstatus (DB field)
     const kept =
       toBool(
         invoiceObject?.idStatus ??
           invoiceObject?.iDstatus ??
           invoiceObject?.inv_idcardstatus
       ) === true;
-
-    // Handover can arrive as: idHandoverStatus, inv_idhandoverstatus (DB field)
     const handed =
       toBool(
         invoiceObject?.idHandoverStatus ?? invoiceObject?.inv_idhandoverstatus
       ) === true;
-
     return kept && !handed;
   }, [
     invoiceObject?.idStatus,
@@ -162,13 +164,18 @@ function InvoiceDetailsWindowDown(props) {
       setInvoiceObject(payload);
 
       if (invoiceSearchBtnStatus) {
-        await axios.post("http://localhost:8085/updateInvoiceDetails", payload);
+        const { data } = await axios.post(
+          "http://localhost:8085/updateInvoiceDetails",
+          payload
+        );
         Swal.fire({
           icon: "success",
           title: "Discount applied",
           showConfirmButton: false,
           timer: 800,
         });
+        // sync fresh server state back (optional, if API returns)
+        onSyncedFromServer && onSyncedFromServer(data || payload);
         handleInvoiceSearch(invoiceObject.InvoiceID);
       } else {
         Swal.fire({
@@ -223,7 +230,10 @@ function InvoiceDetailsWindowDown(props) {
 
     try {
       const payload = { ...invoiceObject, discount: toNumber(discountInput) };
-      await axios.post("http://localhost:8085/createInvoiceDetails", payload);
+      const { data } = await axios.post(
+        "http://localhost:8085/createInvoiceDetails",
+        payload
+      );
       Swal.fire({
         position: "top-end",
         icon: "success",
@@ -231,6 +241,7 @@ function InvoiceDetailsWindowDown(props) {
         showConfirmButton: false,
         timer: 1200,
       });
+      onSyncedFromServer && onSyncedFromServer(data || payload);
     } catch (error) {
       Swal.fire({ icon: "error", title: "Save failed, try again" });
       console.error("Error occurred in front end AXIOS invoice pass", error);
@@ -271,7 +282,10 @@ function InvoiceDetailsWindowDown(props) {
 
     try {
       const payload = { ...invoiceObject, discount: toNumber(discountInput) };
-      await axios.post("http://localhost:8085/updateInvoiceDetails", payload);
+      const { data } = await axios.post(
+        "http://localhost:8085/updateInvoiceDetails",
+        payload
+      );
       Swal.fire({
         position: "top-end",
         icon: "success",
@@ -280,6 +294,7 @@ function InvoiceDetailsWindowDown(props) {
         timer: 800,
       });
       setUpdateBtnStatus(false);
+      onSyncedFromServer && onSyncedFromServer(data || payload);
       handleInvoiceSearch(invoiceObject.InvoiceID);
     } catch (error) {
       Swal.fire({ icon: "error", title: "Update failed, try again" });
@@ -293,7 +308,7 @@ function InvoiceDetailsWindowDown(props) {
         (e) => !e?.inveq_return_date
       );
 
-      if (REQUIRE_ZERO_BALANCE && netPayable > 0) {
+      if (REQUIRE_ZERO_BALANCE && toNumber(netPayable) > 0) {
         return Swal.fire({
           icon: "error",
           title: "Outstanding balance",
@@ -302,7 +317,8 @@ function InvoiceDetailsWindowDown(props) {
       }
 
       const warnings = [];
-      if (netPayable > 0) warnings.push(`Balance due: ${fmtLKR(netPayable)}`);
+      if (toNumber(netPayable) > 0)
+        warnings.push(`Balance due: ${fmtLKR(netPayable)}`);
       if (
         toBool(
           invoiceObject?.idStatus ??
@@ -345,7 +361,10 @@ function InvoiceDetailsWindowDown(props) {
         invoiceCompletedDate: new Date(),
       };
 
-      await axios.post("http://localhost:8085/updateInvoiceDetails", payload);
+      const { data } = await axios.post(
+        "http://localhost:8085/updateInvoiceDetails",
+        payload
+      );
 
       Swal.fire({
         icon: "success",
@@ -354,12 +373,19 @@ function InvoiceDetailsWindowDown(props) {
         showConfirmButton: false,
       });
       setButtonDisable(true);
+      onSyncedFromServer && onSyncedFromServer(data || payload);
       handleInvoiceSearch(invoiceObject.InvoiceID);
     } catch (e) {
       console.error(e);
       Swal.fire({ icon: "error", title: "Completion failed" });
     }
   };
+
+  // Expose actions to parent (for Create New guard flow)
+  useImperativeHandle(ref, () => ({
+    updateInvoice: handleInvoiceUpdate,
+    completeInvoice: handleCompletedButtonClick,
+  }));
 
   const InfoRow = ({ icon, label, value, valueColor }) => (
     <Box
@@ -395,7 +421,6 @@ function InvoiceDetailsWindowDown(props) {
           height: "80%",
         }}
       >
-        {/* Completed pill */}
         {isCompleted && (
           <Chip
             size="small"
@@ -408,7 +433,6 @@ function InvoiceDetailsWindowDown(props) {
           />
         )}
 
-        {/* Top actions: discount + balance */}
         <Box position="absolute" bottom={8} width="100%" pr={2}>
           {invoiceSearchBtnStatus && (
             <Stack
@@ -449,7 +473,7 @@ function InvoiceDetailsWindowDown(props) {
               <Chip
                 size="small"
                 variant="outlined"
-                color={netPayable > 0 ? "warning" : "success"}
+                color={toNumber(netPayable) > 0 ? "warning" : "success"}
                 icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18 }} />}
                 label={`Balance: ${fmtLKR(netPayable)}`}
                 sx={{ ml: "auto" }}
@@ -458,7 +482,6 @@ function InvoiceDetailsWindowDown(props) {
           )}
         </Box>
 
-        {/* Body */}
         <Box
           sx={{
             height: "100%",
@@ -478,15 +501,25 @@ function InvoiceDetailsWindowDown(props) {
               }}
             >
               <InfoRow
-                icon={<MonetizationOnOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />}
+                icon={
+                  <MonetizationOnOutlinedIcon
+                    sx={{ fontSize: 18, color: "text.secondary" }}
+                  />
+                }
                 label="Machine cost"
                 value={invoiceSearchBtnStatus ? fmtLKR(machineTotalCost) : "—"}
               />
 
               <InfoRow
-                icon={<PaidOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />}
+                icon={
+                  <PaidOutlinedIcon
+                    sx={{ fontSize: 18, color: "text.secondary" }}
+                  />
+                }
                 label="Advance"
-                value={invoiceObject.advance ? fmtLKR(invoiceObject.advance) : "—"}
+                value={
+                  invoiceObject.advance ? fmtLKR(invoiceObject.advance) : "—"
+                }
               />
 
               {(invoiceObject.payments || []).map((item, index) => {
@@ -497,9 +530,13 @@ function InvoiceDetailsWindowDown(props) {
                     key={index}
                     icon={
                       isRefund ? (
-                        <UndoOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                        <UndoOutlinedIcon
+                          sx={{ fontSize: 18, color: "text.secondary" }}
+                        />
                       ) : (
-                        <PaymentOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
+                        <PaymentOutlinedIcon
+                          sx={{ fontSize: 18, color: "text.secondary" }}
+                        />
                       )
                     }
                     label={isRefund ? `Refund ${index + 1}` : `Payment ${index + 1}`}
@@ -514,7 +551,11 @@ function InvoiceDetailsWindowDown(props) {
                 <>
                   <Divider sx={{ my: 0.5 }} />
                   <InfoRow
-                    icon={<PaymentOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />}
+                    icon={
+                      <PaymentOutlinedIcon
+                        sx={{ fontSize: 18, color: "text.secondary" }}
+                      />
+                    }
                     label="Total payments"
                     value={fmtLKR(calculateTotalPayments())}
                   />
@@ -522,16 +563,28 @@ function InvoiceDetailsWindowDown(props) {
               )}
 
               <InfoRow
-                icon={<LocalOfferOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />}
+                icon={
+                  <LocalOfferOutlinedIcon
+                    sx={{ fontSize: 18, color: "text.secondary" }}
+                  />
+                }
                 label="Discount"
                 value={fmtLKR(discountInput)}
               />
 
               <InfoRow
-                icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18, color: "text.secondary" }} />}
+                icon={
+                  <AccountBalanceWalletOutlinedIcon
+                    sx={{ fontSize: 18, color: "text.secondary" }}
+                  />
+                }
                 label="Balance"
                 value={fmtLKR(netPayable)}
-                valueColor={netPayable > 0 ? theme.palette.warning.main : theme.palette.success.main}
+                valueColor={
+                  toNumber(netPayable) > 0
+                    ? theme.palette.warning.main
+                    : theme.palette.success.main
+                }
               />
             </Box>
           </Box>
@@ -571,15 +624,7 @@ function InvoiceDetailsWindowDown(props) {
               </span>
             </Tooltip>
 
-            <Tooltip
-              title={
-                REQUIRE_ZERO_BALANCE && netPayable > 0
-                  ? "Cannot complete — outstanding balance"
-                  : idKeptNotHandedOver
-                  ? "ID collected but not handed back — you'll be asked to confirm"
-                  : "Complete invoice"
-              }
-            >
+            <Tooltip title="Complete invoice">
               <span>
                 <Button
                   color="success"
@@ -635,6 +680,6 @@ function InvoiceDetailsWindowDown(props) {
       </Dialog>
     </>
   );
-}
+});
 
 export default InvoiceDetailsWindowDown;
